@@ -1,43 +1,56 @@
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+"""
+공통 의존성
+  get_current_user — JWT Bearer 토큰 검증 후 User 객체 반환.
+  다른 라우터에서 Depends(get_current_user)로 사용.
+"""
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
+from app.config import JWT_ALGORITHM, JWT_SECRET
 from app.db import get_db
 from app.models import User
 
-settings = get_settings()
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+_bearer = HTTPBearer()
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="토큰이 유효하지 않습니다.",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
+    """
+    Authorization: Bearer <token> 헤더를 검증하고 User를 반환.
+    토큰 오류/만료/유저 없음 → 401
+    """
+    token = credentials.credentials
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id: str = payload.get("sub")
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id: str | None = payload.get("sub")
         if user_id is None:
-            raise credentials_exception
+            raise JWTError()
     except JWTError:
-        raise credentials_exception
-
-    result = await db.execute(select(User).where(User.id == int(user_id)))
-    user = result.scalar_one_or_none()
-
-    if user is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="유저를 찾을 수 없습니다.",
+            status_code=401,
+            detail={
+                "success": False,
+                "code": 401,
+                "message": "유효하지 않거나 만료된 토큰입니다.",
+                "data": None,
+            },
         )
 
+    result = await db.execute(select(User).where(User.id == int(user_id)))
+    user = result.scalars().first()
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "success": False,
+                "code": 401,
+                "message": "존재하지 않는 사용자입니다.",
+                "data": None,
+            },
+        )
     return user

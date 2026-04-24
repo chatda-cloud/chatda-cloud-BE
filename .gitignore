@@ -18,8 +18,9 @@ dist/
 build/
 
 # IDE
-.vscode/
 .idea/
+.vscode/
+*.swp
 
 # OS
 .DS_Store
