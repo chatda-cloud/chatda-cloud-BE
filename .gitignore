@@ -1,12 +1,18 @@
+# 가상환경
+venv/
+.venv/
+
 # 환경변수
 .env
 
-# Python
+# Python 캐시
 __pycache__/
-*.py[cod]
+*.pyc
 *.pyo
-.venv/
-venv/
+*.pyd
+.Python
+
+# 빌드
 *.egg-info/
 dist/
 build/
@@ -20,5 +26,5 @@ build/
 .DS_Store
 Thumbs.db
 
-# Docker
+# 로그
 *.log
