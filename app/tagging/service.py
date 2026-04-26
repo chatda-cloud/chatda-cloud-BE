@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME
 from app.models import Item
-from app.tagging import rekognition, clip
+from app.tagging import rekognition, clip, gemini
 from app.tagging.schema import TagsResponse
 
 logger = logging.getLogger(__name__)
@@ -17,6 +17,18 @@ logger = logging.getLogger(__name__)
 
 def _build_image_url(s3_key: str) -> str:
     return f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
+
+
+def _download_s3_image(s3_key: str) -> tuple[bytes, PILImage.Image]:
+    s3 = boto3.client(
+        "s3",
+        region_name=AWS_REGION,
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    )
+    obj = s3.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
+    data = obj["Body"].read()
+    return data, PILImage.open(io.BytesIO(data)).convert("RGB")
 
 
 async def process_tags(item_id: int, s3_key: str, db: AsyncSession) -> None:
@@ -27,40 +39,57 @@ async def process_tags(item_id: int, s3_key: str, db: AsyncSession) -> None:
             logger.warning("process_tags: item %d not found", item_id)
             return
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
-        # Rekognition → ai_tags
+        # ── 1. Rekognition → ai_tags ────────────────────────────────────────
         try:
             ai_tags = await loop.run_in_executor(None, rekognition.detect_labels, s3_key)
         except Exception:
             logger.exception("Rekognition 실패 (item_id=%d)", item_id)
             ai_tags = []
 
-        # CLIP 이미지 인코딩 시도, 실패 시 텍스트 인코딩으로 fallback
+        # ── 2. S3 이미지 다운로드 (CLIP + Gemini 공용) ──────────────────────
+        image_bytes: bytes | None = None
+        image_pil: PILImage.Image | None = None
+        try:
+            image_bytes, image_pil = await loop.run_in_executor(None, _download_s3_image, s3_key)
+        except Exception:
+            logger.exception("S3 이미지 다운로드 실패 (item_id=%d), 텍스트 fallback", item_id)
+
+        # ── 3. CLIP → item_vector (이미지 우선, 텍스트 fallback) ─────────────
         item_vector: list[float] | None = None
         try:
-            s3 = boto3.client(
-                "s3",
-                region_name=AWS_REGION,
-                aws_access_key_id=AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-            )
-            def _download_and_encode() -> list[float]:
-                obj = s3.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
-                image = PILImage.open(io.BytesIO(obj["Body"].read())).convert("RGB")
-                return clip.encode_image_from_pil(image)
-
-            item_vector = await loop.run_in_executor(None, _download_and_encode)
-        except Exception:
-            logger.exception("CLIP 이미지 인코딩 실패 (item_id=%d), 텍스트로 fallback", item_id)
-            try:
-                raw_text = item.raw_text or ""
-                category = item.category or ""
-                text = f"{category} {raw_text}".strip()
+            if image_pil:
+                item_vector = await loop.run_in_executor(None, clip.encode_image_from_pil, image_pil)
+            else:
+                text = f"{item.category or ''} {item.raw_text or ''}".strip()
                 if text:
                     item_vector = await loop.run_in_executor(None, clip.encode_text, text)
+        except Exception:
+            logger.exception("CLIP 인코딩 실패 (item_id=%d)", item_id)
+
+        # ── 4. Gemini → 구조화 태그 (이미지 우선, 텍스트 fallback) ──────────
+        gemini_result: dict | None = None
+        if image_bytes:
+            try:
+                gemini_result = await loop.run_in_executor(
+                    None, gemini.extract_from_image, image_bytes
+                )
             except Exception:
-                logger.exception("CLIP 텍스트 인코딩도 실패 (item_id=%d)", item_id)
+                logger.exception("Gemini 이미지 분석 실패 (item_id=%d)", item_id)
+
+        if gemini_result is None and item.raw_text:
+            try:
+                gemini_result = await loop.run_in_executor(
+                    None, gemini.extract_from_text, item.raw_text
+                )
+            except Exception:
+                logger.exception("Gemini 텍스트 분석 실패 (item_id=%d)", item_id)
+
+        # ── 5. Rekognition + Gemini 태그 병합 ───────────────────────────────
+        if gemini_result:
+            gemini_tags = gemini_result.get("color", []) + gemini_result.get("features", [])
+            ai_tags = list(dict.fromkeys(ai_tags + gemini_tags))
 
         item.ai_tags = ai_tags
         item.item_vector = item_vector
@@ -79,7 +108,10 @@ async def get_item_tags(item_id: int, db: AsyncSession) -> TagsResponse:
     item = result.scalars().first()
     if not item:
         from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail={"success": False, "code": 404, "message": "아이템을 찾을 수 없습니다.", "data": None})
+        raise HTTPException(status_code=404, detail={
+            "success": False, "code": 404,
+            "message": "아이템을 찾을 수 없습니다.", "data": None,
+        })
 
     return TagsResponse(
         item_id=item_id,
