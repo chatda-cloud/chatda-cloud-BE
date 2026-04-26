@@ -29,7 +29,7 @@ from app.users.service import (
     update_username,
 )
 
-router = APIRouter(prefix="/api/users", tags=["users"])
+router = APIRouter(tags=["users"])
 
 
 def _user_out(user: User) -> dict:

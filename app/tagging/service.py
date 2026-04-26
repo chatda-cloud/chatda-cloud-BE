@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME
-from app.models import Item, ItemStatus, LostItem, FoundItem
+from app.models import Item
 from app.tagging import rekognition, clip
 from app.tagging.schema import TagsResponse
 
@@ -19,26 +19,12 @@ def _build_image_url(s3_key: str) -> str:
     return f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
 
 
-async def _get_sub_item(item: Item, db: AsyncSession) -> LostItem | FoundItem | None:
-    if item.status == ItemStatus.LOST:
-        result = await db.execute(select(LostItem).where(LostItem.item_id == item.id))
-        return result.scalars().first()
-    else:
-        result = await db.execute(select(FoundItem).where(FoundItem.item_id == item.id))
-        return result.scalars().first()
-
-
 async def process_tags(item_id: int, s3_key: str, db: AsyncSession) -> None:
     try:
         result = await db.execute(select(Item).where(Item.id == item_id))
         item = result.scalars().first()
         if not item:
             logger.warning("process_tags: item %d not found", item_id)
-            return
-
-        sub_item = await _get_sub_item(item, db)
-        if not sub_item:
-            logger.warning("process_tags: sub_item for item %d not found", item_id)
             return
 
         loop = asyncio.get_event_loop()
@@ -68,16 +54,17 @@ async def process_tags(item_id: int, s3_key: str, db: AsyncSession) -> None:
         except Exception:
             logger.exception("CLIP 이미지 인코딩 실패 (item_id=%d), 텍스트로 fallback", item_id)
             try:
-                raw_text = getattr(sub_item, "raw_text", "") or ""
-                text = f"{item.category} {raw_text}".strip()
-                item_vector = await loop.run_in_executor(None, clip.encode_text, text)
+                raw_text = item.raw_text or ""
+                category = item.category or ""
+                text = f"{category} {raw_text}".strip()
+                if text:
+                    item_vector = await loop.run_in_executor(None, clip.encode_text, text)
             except Exception:
                 logger.exception("CLIP 텍스트 인코딩도 실패 (item_id=%d)", item_id)
 
-        image_url = _build_image_url(s3_key)
-        sub_item.ai_tags = ai_tags
-        sub_item.item_vector = item_vector
-        sub_item.image_url = image_url
+        item.ai_tags = ai_tags
+        item.item_vector = item_vector
+        item.image_url = _build_image_url(s3_key)
 
         await db.commit()
         logger.info("태깅 완료 (item_id=%d, tags=%s)", item_id, ai_tags)
@@ -94,15 +81,10 @@ async def get_item_tags(item_id: int, db: AsyncSession) -> TagsResponse:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail={"success": False, "code": 404, "message": "아이템을 찾을 수 없습니다.", "data": None})
 
-    sub_item = await _get_sub_item(item, db)
-    if not sub_item:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail={"success": False, "code": 404, "message": "아이템 상세 정보를 찾을 수 없습니다.", "data": None})
-
     return TagsResponse(
         item_id=item_id,
         category=item.category,
-        ai_tags=sub_item.ai_tags or [],
-        has_vector=sub_item.item_vector is not None,
-        image_url=sub_item.image_url,
+        ai_tags=item.ai_tags or [],
+        has_vector=getattr(item, "item_vector", None) is not None,
+        image_url=item.image_url,
     )

@@ -42,7 +42,7 @@ from app.auth.service import (
     send_pw_reset_email,
 )
 
-router = APIRouter(prefix="/api/auth", tags=["auth"])
+router = APIRouter(tags=["auth"])
 
 
 def _token_response(user: User, access_token: str, refresh_token: str) -> dict:
