@@ -1,8 +1,17 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
-class TaggingResponse(BaseModel):
-    item_id: int
+class ProcessTagsRequest(BaseModel):
+    s3_key: str = Field(..., alias="s3Key")
+
+    model_config = {"populate_by_name": True}
+
+
+class TagsResponse(BaseModel):
+    item_id: int = Field(..., alias="itemId")
     category: str
-    ai_tags: list[str]
-    item_vector_stored: bool
+    ai_tags: list[str] = Field(..., alias="aiTags")
+    has_vector: bool = Field(..., alias="hasVector")
+    image_url: str | None = Field(None, alias="imageUrl")
+
+    model_config = {"populate_by_name": True}

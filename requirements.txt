@@ -1,36 +1,36 @@
-# ── Web Framework ─────────────────────────────────────────
+# Web Framework
 fastapi==0.111.1
 uvicorn[standard]==0.30.1
-python-multipart==0.0.9         # 파일 업로드 (UploadFile)
- 
-# ── Database ──────────────────────────────────────────────
+python-multipart==0.0.9
+
+# Database
 sqlalchemy[asyncio]==2.0.31
-asyncpg==0.29.0                 # PostgreSQL async 드라이버
-pgvector==0.3.2                 # pgvector SQLAlchemy 타입
-alembic==1.13.2                 # 마이그레이션
- 
-# ── Settings / Validation ─────────────────────────────────
+asyncpg==0.29.0
+pgvector==0.3.2
+alembic==1.13.2
+
+# Settings / Validation
 pydantic==2.8.2
 pydantic-settings==2.3.4
- 
-# ── Auth ──────────────────────────────────────────────────
+
+# Auth
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
- 
-# ── AWS ───────────────────────────────────────────────────
+bcrypt==4.0.1
+
+# AWS
 boto3==1.34.144
- 
-# ── AI ────────────────────────────────────────────────────
-google-generativeai==0.7.2      # Gemini 1.5 Flash
- 
-# CLIP (CPU/GPU 공용)
-# torch는 환경에 맞는 버전 별도 설치 권장
+
+# AI - Gemini
+google-generativeai==0.7.2
+
+# AI - CLIP
 # CPU only: pip install torch --index-url https://download.pytorch.org/whl/cpu
 torch==2.3.1
 torchvision==0.18.1
 ftfy==6.2.0
 regex==2024.5.15
 git+https://github.com/openai/CLIP.git
- 
+
 Pillow==10.4.0
 numpy==1.26.4

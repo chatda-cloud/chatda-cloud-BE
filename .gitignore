@@ -28,3 +28,10 @@ Thumbs.db
 
 # 로그
 *.log
+
+# Lambda 빌드 아티팩트
+lambda/package/
+lambda/*.zip
+
+# Claude
+CLAUDE.local.md

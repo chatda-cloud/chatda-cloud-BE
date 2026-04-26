@@ -1,8 +1,12 @@
-"""DB 연결."""
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.config import DATABASE_URL
+
+
+class Base(DeclarativeBase):
+    pass
+
 
 engine = create_async_engine(DATABASE_URL, echo=False, future=True)
 
