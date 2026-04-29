@@ -69,11 +69,17 @@ async def process_tags(item_id: int, s3_key: str, db: AsyncSession) -> None:
             logger.exception("CLIP 인코딩 실패 (item_id=%d)", item_id)
 
         # ── 4. Gemini → 구조화 태그 (이미지 우선, 텍스트 fallback) ──────────
+        # 이미지가 있을 때: [이미지 원본 + Rekognition 힌트 + 사용자 텍스트] 동시 제공
+        # 이미지가 없을 때: [사용자 텍스트]만 사용
         gemini_result: dict | None = None
         if image_bytes:
             try:
                 gemini_result = await loop.run_in_executor(
-                    None, gemini.extract_from_image, image_bytes
+                    None,
+                    gemini.extract_from_image,
+                    image_bytes,
+                    ai_tags or None,       # Rekognition 라벨 → 힌트
+                    item.raw_text or None, # 사용자 텍스트 → 힌트
                 )
             except Exception:
                 logger.exception("Gemini 이미지 분석 실패 (item_id=%d)", item_id)
@@ -86,10 +92,11 @@ async def process_tags(item_id: int, s3_key: str, db: AsyncSession) -> None:
             except Exception:
                 logger.exception("Gemini 텍스트 분석 실패 (item_id=%d)", item_id)
 
-        # ── 5. Rekognition + Gemini 태그 병합 ───────────────────────────────
+        # ── 5. 최종 태그 결정 — Gemini가 주체, Rekognition은 힌트 역할만 수행 ──
+        # ai_tags는 Gemini 결과(표준화된 한국어)만 사용, Rekognition 영어 라벨 제외
         if gemini_result:
-            gemini_tags = gemini_result.get("color", []) + gemini_result.get("features", [])
-            ai_tags = list(dict.fromkeys(ai_tags + gemini_tags))
+            ai_tags = gemini_result.get("color", []) + gemini_result.get("features", [])
+            item.category = gemini_result.get("category") or item.category
 
         item.ai_tags = ai_tags
         item.item_vector = item_vector

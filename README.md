@@ -13,7 +13,7 @@
 | Runtime   | Python 3.11+                                     |
 | Database  | PostgreSQL 15 + pgvector                         |
 | ORM       | SQLAlchemy 2.0 (Async)                           |
-| AI        | OpenAI CLIP / Gemini 1.5 Flash / AWS Rekognition |
+| AI        | OpenAI CLIP / Gemini 2.5 Flash / AWS Rekognition |
 | Storage   | AWS S3                                           |
 | 알림      | AWS SNS / FCM                                    |
 | 배포      | AWS ECS (app/) + AWS Lambda (lambda/)            |
