@@ -30,6 +30,14 @@ class LostItemCreate(BaseModel):
     raw_text: str | None = None
 
 
+class LostItemUpdate(BaseModel):
+    category: str | None = None
+    date_start: datetime | None = None
+    date_end: datetime | None = None
+    location: str | None = None
+    raw_text: str | None = None
+
+
 class LostItemResponse(BaseModel):
     item_id: int
     date_start: datetime
@@ -48,6 +56,13 @@ class FoundItemCreate(BaseModel):
     category: str
     found_date: datetime
     location: str
+    raw_text: str | None = None
+
+
+class FoundItemUpdate(BaseModel):
+    category: str | None = None
+    found_date: datetime | None = None
+    location: str | None = None
     raw_text: str | None = None
 
 
