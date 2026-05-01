@@ -1,113 +1,86 @@
-from __future__ import annotations
+"""SQLAlchemy 모델.
+각 담당자는 이 파일을 import 하여 사용.
+"""
+from datetime import datetime, timezone
 
-import enum
-from datetime import datetime
+from sqlalchemy import (
+    Boolean, Column, Date, DateTime, ForeignKey,
+    Integer, String, Text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import DeclarativeBase, relationship
 
-from pgvector.sqlalchemy import Vector
-from sqlalchemy import BigInteger, Boolean, Enum, Float, ForeignKey, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.sql import func
-
-from app.db import Base
+try:
+    from pgvector.sqlalchemy import Vector
+    _VECTOR_AVAILABLE = True
+except ImportError:
+    _VECTOR_AVAILABLE = False
 
 
-class ItemStatus(str, enum.Enum):
-    LOST = "LOST"
-    FOUND = "FOUND"
-    MATCHED = "MATCHED"
+class Base(DeclarativeBase):
+    pass
 
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (
-        UniqueConstraint("user_id", name="uq_users_user_id"),
-        UniqueConstraint("email", name="uq_users_email"),
+
+    id                = Column(Integer, primary_key=True, index=True)
+    email             = Column(String(255), unique=True, nullable=False, index=True)
+    hashed_password   = Column(String(255), nullable=True)   # 소셜 로그인은 null 허용
+    username          = Column(String(50), nullable=False)
+    gender            = Column(String(10), nullable=True)    # MALE | FEMALE | OTHER
+    birthdate         = Column(Date, nullable=True)
+    profile_image_url = Column(Text, nullable=True)
+    refresh_token     = Column(Text, nullable=True)          # 로그인 시 저장, 로그아웃 시 null
+    pw_reset_token    = Column(String(255), nullable=True)   # 비밀번호 재설정 토큰
+    pw_reset_expires  = Column(DateTime(timezone=True), nullable=True)
+    is_active         = Column(Boolean, default=True, nullable=False)
+    created_at        = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(String(30), nullable=False)
-    password: Mapped[str] = mapped_column(String(255), nullable=False)
-    email: Mapped[str] = mapped_column(String(100), nullable=False)
-    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    fcm_token: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now(), nullable=False)
-
-    items: Mapped[list[Item]] = relationship("Item", back_populates="user")
-
-    def __repr__(self) -> str:
-        return f"<User id={self.id} user_id={self.user_id!r}>"
+    items   = relationship("Item", back_populates="owner", lazy="select")
+    matches = relationship("Match", back_populates="user", lazy="select")
 
 
 class Item(Base):
     __tablename__ = "items"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    category: Mapped[str] = mapped_column(String(50), nullable=False)
-    status: Mapped[ItemStatus] = mapped_column(Enum(ItemStatus, name="item_status"), nullable=False, default=ItemStatus.LOST)
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now(), nullable=False)
+    id         = Column(Integer, primary_key=True, index=True)
+    owner_id   = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    item_type  = Column(String(10), nullable=False)          # LOST | FOUND
+    category   = Column(String(50))
+    raw_text   = Column(Text)
+    image_url  = Column(Text)
+    ai_tags    = Column(JSONB)
+    status     = Column(String(20), default="PENDING", nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
 
-    user: Mapped[User] = relationship("User", back_populates="items")
-    lost_item: Mapped[LostItem | None] = relationship("LostItem", back_populates="item", uselist=False, cascade="all, delete-orphan")
-    found_item: Mapped[FoundItem | None] = relationship("FoundItem", back_populates="item", uselist=False, cascade="all, delete-orphan")
-    lost_matches: Mapped[list[Match]] = relationship("Match", foreign_keys="Match.lost_item_id", back_populates="lost_item")
-    found_matches: Mapped[list[Match]] = relationship("Match", foreign_keys="Match.found_item_id", back_populates="found_item")
+    if _VECTOR_AVAILABLE:
+        item_vector = Column(Vector(512))
 
-    def __repr__(self) -> str:
-        return f"<Item id={self.id} category={self.category!r} status={self.status}>"
-
-
-class LostItem(Base):
-    __tablename__ = "lost_items"
-
-    item_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
-    date_start: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
-    date_end: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
-    location: Mapped[str] = mapped_column(String(100), nullable=False)
-    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    ai_tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    item_vector: Mapped[list[float] | None] = mapped_column(Vector(512), nullable=True)
-
-    item: Mapped[Item] = relationship("Item", back_populates="lost_item")
-
-    def __repr__(self) -> str:
-        return f"<LostItem item_id={self.item_id} location={self.location!r}>"
-
-
-class FoundItem(Base):
-    __tablename__ = "found_items"
-
-    item_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
-    found_date: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
-    location: Mapped[str] = mapped_column(String(100), nullable=False)
-    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    ai_tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    item_vector: Mapped[list[float] | None] = mapped_column(Vector(512), nullable=True)
-
-    item: Mapped[Item] = relationship("Item", back_populates="found_item")
-
-    def __repr__(self) -> str:
-        return f"<FoundItem item_id={self.item_id} location={self.location!r}>"
+    owner = relationship("User", back_populates="items", lazy="select")
 
 
 class Match(Base):
     __tablename__ = "matches"
-    __table_args__ = (
-        UniqueConstraint("lost_item_id", "found_item_id", name="uq_matches_pair"),
+
+    id            = Column(Integer, primary_key=True, index=True)
+    user_id       = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    lost_item_id  = Column(Integer, ForeignKey("items.id"), nullable=False)
+    found_item_id = Column(Integer, ForeignKey("items.id"), nullable=False)
+    similarity    = Column(Integer, nullable=False)           # 0~100
+    status        = Column(String(20), default="PENDING", nullable=False)
+    created_at    = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    lost_item_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
-    found_item_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
-    similarity_score: Mapped[float] = mapped_column(Float, nullable=False)
-    is_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now(), nullable=False)
-
-    lost_item: Mapped[Item] = relationship("Item", foreign_keys=[lost_item_id], back_populates="lost_matches")
-    found_item: Mapped[Item] = relationship("Item", foreign_keys=[found_item_id], back_populates="found_matches")
-
-    def __repr__(self) -> str:
-        return f"<Match id={self.id} lost={self.lost_item_id} found={self.found_item_id} score={self.similarity_score:.2f}>"
+    user = relationship("User", back_populates="matches", lazy="select")

@@ -11,6 +11,7 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+.pytest_cache/
 
 # 빌드
 *.egg-info/
@@ -18,8 +19,9 @@ dist/
 build/
 
 # IDE
-.vscode/
 .idea/
+.vscode/
+*.swp
 
 # OS
 .DS_Store
@@ -27,3 +29,10 @@ Thumbs.db
 
 # 로그
 *.log
+
+# Lambda 빌드 아티팩트
+lambda/package/
+lambda/*.zip
+
+# Claude
+CLAUDE.local.md
