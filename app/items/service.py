@@ -16,6 +16,7 @@ from app.items.schema import (
 from app.models import FoundItem, Item, ItemStatus, LostItem
 
 
+# ── 응답 변환 헬퍼 ─────────────────────────────────────────
 def lost_item_to_response(lost_item: LostItem) -> LostItemResponse:
     return LostItemResponse(
         item_id=lost_item.item_id,
@@ -41,9 +42,12 @@ def found_item_to_response(found_item: FoundItem) -> FoundItemResponse:
     )
 
 
+# ── 조회 헬퍼 (없으면 404) ─────────────────────────────────
 async def get_lost_item_or_404(db: AsyncSession, item_id: int) -> LostItem:
     result = await db.execute(
-        select(LostItem).options(joinedload(LostItem.item)).where(LostItem.item_id == item_id)
+        select(LostItem)
+        .options(joinedload(LostItem.item))
+        .where(LostItem.item_id == item_id)
     )
     lost_item = result.scalars().first()
     if lost_item is None:
@@ -56,7 +60,9 @@ async def get_lost_item_or_404(db: AsyncSession, item_id: int) -> LostItem:
 
 async def get_found_item_or_404(db: AsyncSession, item_id: int) -> FoundItem:
     result = await db.execute(
-        select(FoundItem).options(joinedload(FoundItem.item)).where(FoundItem.item_id == item_id)
+        select(FoundItem)
+        .options(joinedload(FoundItem.item))
+        .where(FoundItem.item_id == item_id)
     )
     found_item = result.scalars().first()
     if found_item is None:
@@ -67,10 +73,20 @@ async def get_found_item_or_404(db: AsyncSession, item_id: int) -> FoundItem:
     return found_item
 
 
+# ── 소유자 검증 헬퍼 ───────────────────────────────────────
+def check_owner(item_user_id: int, current_user_id: int) -> None:
+    if item_user_id != current_user_id:
+        raise HTTPException(
+            status_code=403,
+            detail={"success": False, "code": 403, "message": "권한이 없습니다.", "data": None},
+        )
+
+
+# ── CRUD ───────────────────────────────────────────────────
 async def create_lost_item(db: AsyncSession, user_id: int, body: LostItemCreate) -> LostItemResponse:
     item = Item(user_id=user_id, category=body.category, status=ItemStatus.LOST)
     db.add(item)
-    await db.flush()
+    await db.flush()  # item.id 확보 (commit은 get_db()가 처리)
 
     lost_item = LostItem(
         item_id=item.id,
@@ -80,10 +96,10 @@ async def create_lost_item(db: AsyncSession, user_id: int, body: LostItemCreate)
         raw_text=body.raw_text,
     )
     db.add(lost_item)
-    await db.commit()
+    await db.flush()
 
-    created = await get_lost_item_or_404(db, item.id)
-    return lost_item_to_response(created)
+    await db.refresh(lost_item, ["item"])
+    return lost_item_to_response(lost_item)
 
 
 async def create_found_item(db: AsyncSession, user_id: int, body: FoundItemCreate) -> FoundItemResponse:
@@ -98,10 +114,10 @@ async def create_found_item(db: AsyncSession, user_id: int, body: FoundItemCreat
         raw_text=body.raw_text,
     )
     db.add(found_item)
-    await db.commit()
+    await db.flush()
 
-    created = await get_found_item_or_404(db, item.id)
-    return found_item_to_response(created)
+    await db.refresh(found_item, ["item"])
+    return found_item_to_response(found_item)
 
 
 async def read_lost_item(db: AsyncSession, item_id: int) -> LostItemResponse:
@@ -118,11 +134,7 @@ async def update_lost_item(
     db: AsyncSession, item_id: int, user_id: int, body: LostItemUpdate
 ) -> LostItemResponse:
     lost_item = await get_lost_item_or_404(db, item_id)
-    if lost_item.item.user_id != user_id:
-        raise HTTPException(
-            status_code=403,
-            detail={"success": False, "code": 403, "message": "수정 권한이 없습니다.", "data": None},
-        )
+    check_owner(lost_item.item.user_id, user_id)
 
     if body.category is not None:
         lost_item.item.category = body.category
@@ -135,32 +147,24 @@ async def update_lost_item(
     if body.raw_text is not None:
         lost_item.raw_text = body.raw_text
 
-    await db.commit()
-    updated = await get_lost_item_or_404(db, item_id)
-    return lost_item_to_response(updated)
+    await db.flush()
+    await db.refresh(lost_item, ["item"])
+    return lost_item_to_response(lost_item)
 
 
 async def delete_lost_item(db: AsyncSession, item_id: int, user_id: int) -> None:
     lost_item = await get_lost_item_or_404(db, item_id)
-    if lost_item.item.user_id != user_id:
-        raise HTTPException(
-            status_code=403,
-            detail={"success": False, "code": 403, "message": "삭제 권한이 없습니다.", "data": None},
-        )
-
+    check_owner(lost_item.item.user_id, user_id)
+    # items 삭제 시 CASCADE로 lost_items도 같이 삭제됨
     await db.delete(lost_item.item)
-    await db.commit()
+    await db.flush()
 
 
 async def update_found_item(
     db: AsyncSession, item_id: int, user_id: int, body: FoundItemUpdate
 ) -> FoundItemResponse:
     found_item = await get_found_item_or_404(db, item_id)
-    if found_item.item.user_id != user_id:
-        raise HTTPException(
-            status_code=403,
-            detail={"success": False, "code": 403, "message": "수정 권한이 없습니다.", "data": None},
-        )
+    check_owner(found_item.item.user_id, user_id)
 
     if body.category is not None:
         found_item.item.category = body.category
@@ -171,18 +175,13 @@ async def update_found_item(
     if body.raw_text is not None:
         found_item.raw_text = body.raw_text
 
-    await db.commit()
-    updated = await get_found_item_or_404(db, item_id)
-    return found_item_to_response(updated)
+    await db.flush()
+    await db.refresh(found_item, ["item"])
+    return found_item_to_response(found_item)
 
 
 async def delete_found_item(db: AsyncSession, item_id: int, user_id: int) -> None:
     found_item = await get_found_item_or_404(db, item_id)
-    if found_item.item.user_id != user_id:
-        raise HTTPException(
-            status_code=403,
-            detail={"success": False, "code": 403, "message": "삭제 권한이 없습니다.", "data": None},
-        )
-
+    check_owner(found_item.item.user_id, user_id)
     await db.delete(found_item.item)
-    await db.commit()
+    await db.flush()

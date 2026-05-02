@@ -1,8 +1,10 @@
 import boto3
-from app.config import AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME
+
+from app.config import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME
 
 
 def detect_labels(s3_key: str, max_labels: int = 10) -> list[str]:
+    """S3 이미지에서 Rekognition 라벨 감지 (동기 — run_in_executor로 호출)."""
     client = boto3.client(
         "rekognition",
         region_name=AWS_REGION,

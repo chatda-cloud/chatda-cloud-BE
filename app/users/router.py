@@ -15,16 +15,17 @@ from app.db import get_db
 from app.dependencies import get_current_user
 from app.models import User
 from app.users.schema import (
-    ItemSummary,
+    FoundItemSummary,
+    LostItemSummary,
     MatchSummary,
     UpdateProfileImageRequest,
     UpdateUsernameRequest,
     UserOut,
 )
 from app.users.service import (
-    get_found_items,
-    get_lost_items,
-    get_matches,
+    get_my_found_items,
+    get_my_lost_items,
+    get_my_matches,
     update_profile_image,
     update_username,
 )
@@ -32,28 +33,18 @@ from app.users.service import (
 router = APIRouter(tags=["users"])
 
 
-def _user_out(user: User) -> dict:
-    return UserOut(
-        id=user.id,
-        email=user.email,
-        username=user.username,
-        gender=user.gender,
-        birthDate=user.birthdate,
-        profileImage=user.profile_image_url,
-        createdAt=user.created_at,
-    ).model_dump()
-
-
-# ── 내 정보 조회 ──────────────────────────────────────────────────────────────
-
+# ── 내 정보 조회 ──────────────────────────────────────────
 @router.get("/me")
 async def get_me(current_user: User = Depends(get_current_user)):
-    return {"success": True, "code": 200, "message": "내 정보 조회 성공",
-            "data": _user_out(current_user)}
+    return {
+        "success": True,
+        "code": 200,
+        "message": "내 정보 조회 성공",
+        "data": UserOut.model_validate(current_user).model_dump(),
+    }
 
 
-# ── 닉네임 변경 ───────────────────────────────────────────────────────────────
-
+# ── 닉네임 변경 ───────────────────────────────────────────
 @router.patch("/me/username")
 async def patch_username(
     body: UpdateUsernameRequest,
@@ -65,74 +56,83 @@ async def patch_username(
             "success": False, "code": 400, "message": "닉네임을 입력해주세요.", "data": None,
         })
     user = await update_username(db, current_user, body.username)
-    return {"success": True, "code": 200, "message": "닉네임 변경 성공",
-            "data": _user_out(user)}
+    return {
+        "success": True,
+        "code": 200,
+        "message": "닉네임 변경 성공",
+        "data": UserOut.model_validate(user).model_dump(),
+    }
 
 
-# ── 프로필 사진 변경 ──────────────────────────────────────────────────────────
-
+# ── 프로필 사진 변경 ──────────────────────────────────────
 @router.patch("/me/profile-image")
 async def patch_profile_image(
     body: UpdateProfileImageRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    user = await update_profile_image(db, current_user, body.profileImage)
-    return {"success": True, "code": 200, "message": "프로필 사진 변경 성공",
-            "data": _user_out(user)}
+    user = await update_profile_image(db, current_user, body.profile_image_url)
+    return {
+        "success": True,
+        "code": 200,
+        "message": "프로필 사진 변경 성공",
+        "data": UserOut.model_validate(user).model_dump(),
+    }
 
 
-# ── 내 분실물 조회 ────────────────────────────────────────────────────────────
-
+# ── 내 분실물 조회 ────────────────────────────────────────
 @router.get("/me/lost-items")
-async def get_my_lost_items(
+async def get_my_lost_items_route(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    items = await get_lost_items(db, current_user.id)
+    lost_items = await get_my_lost_items(db, current_user.id)
     data = [
-        ItemSummary(
-            id=it.id, itemType=it.item_type, category=it.category,
-            rawText=it.raw_text, imageUrl=it.image_url,
-            status=it.status, createdAt=it.created_at,
+        LostItemSummary(
+            item_id=li.item_id,
+            category=li.item.category,
+            status=li.item.status,
+            location=li.location,
+            date_start=li.date_start,
+            date_end=li.date_end,
+            raw_text=li.raw_text,
+            image_url=li.image_url,
+            created_at=li.item.created_at,
         ).model_dump()
-        for it in items
+        for li in lost_items
     ]
     return {"success": True, "code": 200, "message": "내 분실물 조회 성공", "data": data}
 
 
-# ── 내 습득물 조회 ────────────────────────────────────────────────────────────
-
+# ── 내 습득물 조회 ────────────────────────────────────────
 @router.get("/me/found-items")
-async def get_my_found_items(
+async def get_my_found_items_route(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    items = await get_found_items(db, current_user.id)
+    found_items = await get_my_found_items(db, current_user.id)
     data = [
-        ItemSummary(
-            id=it.id, itemType=it.item_type, category=it.category,
-            rawText=it.raw_text, imageUrl=it.image_url,
-            status=it.status, createdAt=it.created_at,
+        FoundItemSummary(
+            item_id=fi.item_id,
+            category=fi.item.category,
+            status=fi.item.status,
+            location=fi.location,
+            found_date=fi.found_date,
+            raw_text=fi.raw_text,
+            image_url=fi.image_url,
+            created_at=fi.item.created_at,
         ).model_dump()
-        for it in items
+        for fi in found_items
     ]
     return {"success": True, "code": 200, "message": "내 습득물 조회 성공", "data": data}
 
 
-# ── 내 매칭 리스트 조회 ───────────────────────────────────────────────────────
-
+# ── 내 매칭 리스트 조회 ───────────────────────────────────
 @router.get("/me/matches")
-async def get_my_matches(
+async def get_my_matches_route(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    matches = await get_matches(db, current_user.id)
-    data = [
-        MatchSummary(
-            id=m.id, lostItemId=m.lost_item_id, foundItemId=m.found_item_id,
-            similarity=m.similarity, status=m.status, createdAt=m.created_at,
-        ).model_dump()
-        for m in matches
-    ]
+    matches = await get_my_matches(db, current_user.id)
+    data = [MatchSummary.model_validate(m).model_dump() for m in matches]
     return {"success": True, "code": 200, "message": "매칭 리스트 조회 성공", "data": data}

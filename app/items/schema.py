@@ -6,11 +6,6 @@ from app.models import ItemStatus
 
 
 # ── 공통 ───────────────────────────────────────────────────
-class ItemBase(BaseModel):
-    category: str
-    status: ItemStatus
-
-
 class ItemResponse(BaseModel):
     id: int
     user_id: int

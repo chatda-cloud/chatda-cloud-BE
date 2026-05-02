@@ -6,8 +6,8 @@ items 라우터
   GET    /api/items/lost/{item_id}    → 분실물 단건 조회
   GET    /api/items/found/{item_id}   → 습득물 단건 조회
   PUT    /api/items/lost/{item_id}    → 분실물 수정
-  DELETE /api/items/lost/{item_id}    → 분실물 삭제
   PUT    /api/items/found/{item_id}   → 습득물 수정
+  DELETE /api/items/lost/{item_id}    → 분실물 삭제
   DELETE /api/items/found/{item_id}   → 습득물 삭제
 """
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.dependencies import get_current_user
-from app.items.schema import FoundItemCreate, LostItemCreate, LostItemUpdate, FoundItemUpdate
+from app.items.schema import FoundItemCreate, FoundItemUpdate, LostItemCreate, LostItemUpdate
 from app.items.service import (
     create_found_item,
     create_lost_item,
@@ -38,12 +38,7 @@ async def create_lost_item_route(
     db: AsyncSession = Depends(get_db),
 ):
     data = await create_lost_item(db, current_user.id, body)
-    return {
-        "success": True,
-        "code": 201,
-        "message": "분실물이 등록되었습니다.",
-        "data": data.model_dump(),
-    }
+    return {"success": True, "code": 201, "message": "분실물이 등록되었습니다.", "data": data.model_dump()}
 
 
 @router.post("/found", status_code=201)
@@ -53,34 +48,25 @@ async def create_found_item_route(
     db: AsyncSession = Depends(get_db),
 ):
     data = await create_found_item(db, current_user.id, body)
-    return {
-        "success": True,
-        "code": 201,
-        "message": "습득물이 등록되었습니다.",
-        "data": data.model_dump(),
-    }
+    return {"success": True, "code": 201, "message": "습득물이 등록되었습니다.", "data": data.model_dump()}
 
 
 @router.get("/lost/{item_id}")
-async def get_lost_item_route(item_id: int, db: AsyncSession = Depends(get_db)):
+async def get_lost_item_route(
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+):
     data = await read_lost_item(db, item_id)
-    return {
-        "success": True,
-        "code": 200,
-        "message": "분실물 조회 성공",
-        "data": data.model_dump(),
-    }
+    return {"success": True, "code": 200, "message": "분실물 조회 성공", "data": data.model_dump()}
 
 
 @router.get("/found/{item_id}")
-async def get_found_item_route(item_id: int, db: AsyncSession = Depends(get_db)):
+async def get_found_item_route(
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+):
     data = await read_found_item(db, item_id)
-    return {
-        "success": True,
-        "code": 200,
-        "message": "습득물 조회 성공",
-        "data": data.model_dump(),
-    }
+    return {"success": True, "code": 200, "message": "습득물 조회 성공", "data": data.model_dump()}
 
 
 @router.put("/lost/{item_id}")
@@ -91,22 +77,7 @@ async def update_lost_item_route(
     db: AsyncSession = Depends(get_db),
 ):
     data = await update_lost_item(db, item_id, current_user.id, body)
-    return {
-        "success": True,
-        "code": 200,
-        "message": "분실물이 수정되었습니다.",
-        "data": data.model_dump(),
-    }
-
-
-@router.delete("/lost/{item_id}")
-async def delete_lost_item_route(
-    item_id: int,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    await delete_lost_item(db, item_id, current_user.id)
-    return {"success": True, "code": 200, "message": "분실물이 삭제되었습니다.", "data": None}
+    return {"success": True, "code": 200, "message": "분실물이 수정되었습니다.", "data": data.model_dump()}
 
 
 @router.put("/found/{item_id}")
@@ -117,12 +88,17 @@ async def update_found_item_route(
     db: AsyncSession = Depends(get_db),
 ):
     data = await update_found_item(db, item_id, current_user.id, body)
-    return {
-        "success": True,
-        "code": 200,
-        "message": "습득물이 수정되었습니다.",
-        "data": data.model_dump(),
-    }
+    return {"success": True, "code": 200, "message": "습득물이 수정되었습니다.", "data": data.model_dump()}
+
+
+@router.delete("/lost/{item_id}")
+async def delete_lost_item_route(
+    item_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await delete_lost_item(db, item_id, current_user.id)
+    return {"success": True, "code": 200, "message": "분실물이 삭제되었습니다.", "data": None}
 
 
 @router.delete("/found/{item_id}")
@@ -136,8 +112,10 @@ async def delete_found_item_route(
 
 
 @router.post("/presigned-url")
-async def create_presigned_url_placeholder(current_user: User = Depends(get_current_user)):
-    # 텍스트 CRUD(C) 완료 후 S3 이미지 업로드 플로우와 연결 예정
+async def create_presigned_url_placeholder(
+    current_user: User = Depends(get_current_user),
+):
+    # S3 이미지 업로드 플로우 연결 예정
     _ = current_user
     raise HTTPException(
         status_code=501,
