@@ -113,6 +113,7 @@ class Match(Base):
     found_item_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     similarity_score: Mapped[float] = mapped_column(Float, nullable=False)
     is_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    matched_at: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now(), nullable=False)
 
     lost_item: Mapped[Item] = relationship("Item", foreign_keys=[lost_item_id], back_populates="lost_matches")

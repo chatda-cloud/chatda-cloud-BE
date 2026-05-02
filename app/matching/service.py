@@ -268,6 +268,7 @@ async def confirm_match(
         })
 
     match.is_confirmed = True
+    match.matched_at = datetime.utcnow() 
     match.lost_item.status = ItemStatus.MATCHED
     match.found_item.status = ItemStatus.MATCHED
 
