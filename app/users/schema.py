@@ -31,6 +31,7 @@ class UpdateProfileImageRequest(BaseModel):
 # ── 아이템 요약 (목록 조회용) ──────────────────────────────
 class LostItemSummary(BaseModel):
     item_id: int
+    item_name: str  
     category: str
     status: ItemStatus
     location: str
@@ -45,6 +46,7 @@ class LostItemSummary(BaseModel):
 
 class FoundItemSummary(BaseModel):
     item_id: int
+    item_name: str  
     category: str
     status: ItemStatus
     location: str

@@ -90,6 +90,7 @@ async def get_my_lost_items_route(
     data = [
         LostItemSummary(
             item_id=li.item_id,
+            item_name=li.item_name,  
             category=li.item.category,
             status=li.item.status,
             location=li.location,
@@ -114,6 +115,7 @@ async def get_my_found_items_route(
     data = [
         FoundItemSummary(
             item_id=fi.item_id,
+            item_name=fi.item_name,
             category=fi.item.category,
             status=fi.item.status,
             location=fi.location,
