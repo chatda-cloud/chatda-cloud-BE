@@ -26,21 +26,18 @@ class User(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(String(30), nullable=False)           # 로그인 아이디
-    password: Mapped[str | None] = mapped_column(String(255), nullable=True)   # 소셜 로그인은 null 허용
+    user_id: Mapped[str] = mapped_column(String(30), nullable=False)
+    password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     email: Mapped[str] = mapped_column(String(100), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     fcm_token: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    # auth 관련 컬럼
-    username: Mapped[str | None] = mapped_column(String(50), nullable=True)    # 닉네임
-    gender: Mapped[str | None] = mapped_column(String(10), nullable=True)      # M | F
+    username: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    gender: Mapped[str | None] = mapped_column(String(10), nullable=True)
     birthdate: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
     profile_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)     # 로그인 시 저장, 로그아웃 시 null
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     pw_reset_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     pw_reset_expires: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
-
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now(), nullable=False)
 
     items: Mapped[list[Item]] = relationship("Item", back_populates="user")
@@ -72,35 +69,37 @@ class LostItem(Base):
     __tablename__ = "lost_items"
 
     item_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
+    item_name: Mapped[str] = mapped_column(String(100), nullable=False)        # 사용자 입력 물건 이름
     date_start: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
     date_end: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
     location: Mapped[str] = mapped_column(String(100), nullable=False)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    ai_tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    features: Mapped[list | None] = mapped_column(JSONB, nullable=True)        # AI 추출 특징 (ai_tags → features)
     item_vector: Mapped[list[float] | None] = mapped_column(Vector(512), nullable=True)
 
     item: Mapped[Item] = relationship("Item", back_populates="lost_item")
 
     def __repr__(self) -> str:
-        return f"<LostItem item_id={self.item_id} location={self.location!r}>"
+        return f"<LostItem item_id={self.item_id} item_name={self.item_name!r}>"
 
 
 class FoundItem(Base):
     __tablename__ = "found_items"
 
     item_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
+    item_name: Mapped[str] = mapped_column(String(100), nullable=False)        # 사용자 입력 물건 이름
     found_date: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
     location: Mapped[str] = mapped_column(String(100), nullable=False)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    ai_tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    features: Mapped[list | None] = mapped_column(JSONB, nullable=True)        # AI 추출 특징 (ai_tags → features)
     item_vector: Mapped[list[float] | None] = mapped_column(Vector(512), nullable=True)
 
     item: Mapped[Item] = relationship("Item", back_populates="found_item")
 
     def __repr__(self) -> str:
-        return f"<FoundItem item_id={self.item_id} location={self.location!r}>"
+        return f"<FoundItem item_id={self.item_id} item_name={self.item_name!r}>"
 
 
 class Match(Base):
@@ -114,6 +113,7 @@ class Match(Base):
     found_item_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     similarity_score: Mapped[float] = mapped_column(Float, nullable=False)
     is_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    matched_at: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now(), nullable=False)
 
     lost_item: Mapped[Item] = relationship("Item", foreign_keys=[lost_item_id], back_populates="lost_matches")

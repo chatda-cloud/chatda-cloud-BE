@@ -3,10 +3,10 @@ service.py 단위 테스트.
 
 검증 항목:
   1. Rekognition 라벨이 Gemini에 힌트로 전달되는지
-  2. ai_tags가 Gemini 결과(한국어)만으로 구성되는지 (Rekognition 영어 라벨 미포함)
+  2. features가 Gemini 결과(한국어)만으로 구성되는지 (Rekognition 영어 라벨 미포함)
   3. item.category가 Gemini 결과로 업데이트되는지
   4. item.image_url이 설정되는지
-  5. Gemini 실패 시 Rekognition 라벨이 ai_tags fallback으로 남는지
+  5. Gemini 실패 시 Rekognition 라벨이 features fallback으로 남는지
   6. 이미지 다운로드 실패 시 텍스트 경로로 fallback되는지
 """
 import asyncio
@@ -35,7 +35,7 @@ def _make_item(
     category="기타",
     raw_text="에어팟 케이스 잃어버렸어요",
     image_url=None,
-    ai_tags=None,
+    features=None,
     item_vector=None,
 ):
     item = MagicMock()
@@ -43,7 +43,7 @@ def _make_item(
     item.category = category
     item.raw_text = raw_text
     item.image_url = image_url
-    item.ai_tags = ai_tags
+    item.features = features
     item.item_vector = item_vector
     return item
 
@@ -106,17 +106,17 @@ class TestProcessTagsWithImage:
             asyncio.run(process_tags(item.id, "items/1/photo.jpg", db))
             return item, mock_gemini
 
-    def test_ai_tags_contains_only_gemini_output(self):
+    def test_features_contains_only_gemini_output(self):
         item = _make_item()
         item, _ = self._run(item)
         expected = GEMINI_RESULT["color"] + GEMINI_RESULT["features"]
-        assert item.ai_tags == expected
+        assert item.features == expected
 
-    def test_ai_tags_excludes_rekognition_english_labels(self):
+    def test_features_excludes_rekognition_english_labels(self):
         item = _make_item()
         item, _ = self._run(item)
         for eng_label in REKOGNITION_LABELS:
-            assert eng_label not in item.ai_tags
+            assert eng_label not in item.features
 
     def test_category_updated_from_gemini(self):
         item = _make_item(category="기타")
@@ -184,7 +184,7 @@ class TestProcessTagsImageDownloadFailure:
         mock_img.assert_not_called()
         mock_txt.assert_called_once_with("갈색 지갑")
         assert item.category == "지갑"
-        assert "갈색" in item.ai_tags
+        assert "갈색" in item.features
 
     def test_category_preserved_if_gemini_fails_too(self):
         item = _make_item(category="원래카테고리", raw_text=None)
@@ -203,10 +203,10 @@ class TestProcessTagsImageDownloadFailure:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# process_tags — Gemini 실패 시 ai_tags fallback
+# process_tags — Gemini 실패 시 features fallback
 # ─────────────────────────────────────────────────────────────────────────────
 class TestProcessTagsGeminiFailure:
-    def test_rekognition_labels_kept_as_fallback_ai_tags(self):
+    def test_rekognition_labels_kept_as_fallback_features(self):
         item = _make_item()
         db = _db_session(item)
         pil = _make_pil_image()
@@ -221,7 +221,7 @@ class TestProcessTagsGeminiFailure:
         ):
             asyncio.run(process_tags(item.id, "items/1/photo.jpg", db))
 
-        assert item.ai_tags == REKOGNITION_LABELS
+        assert item.features == REKOGNITION_LABELS
         assert item.category == "기타"
 
 

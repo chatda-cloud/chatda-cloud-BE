@@ -61,7 +61,7 @@ app.include_router(auth_router,     prefix=f"{API_PREFIX}/auth",    tags=["Auth"
 app.include_router(users_router,    prefix=f"{API_PREFIX}/users",   tags=["Users"])
 app.include_router(items_router,    prefix=f"{API_PREFIX}/items",   tags=["Items"])
 app.include_router(tagging_router,  prefix=f"{API_PREFIX}/items",   tags=["Tagging"])
-app.include_router(matching_router, prefix=f"{API_PREFIX}/items",   tags=["Matching"])
+app.include_router(matching_router, prefix=f"{API_PREFIX}", tags=["Matching"])
 
 
 # ── 전역 예외 처리 ─────────────────────────────────────────
