@@ -135,6 +135,8 @@ async def process_tags(
     if gemini_result:
         features = gemini_result.get("color", []) + gemini_result.get("features", [])
         category = gemini_result.get("category") or item.category
+    elif rek_labels:
+        features = rek_labels
 
     image_url = _build_image_url(s3_key) if s3_key else None
 
