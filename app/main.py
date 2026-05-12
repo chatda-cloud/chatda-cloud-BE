@@ -15,6 +15,7 @@ from app.auth.router import router as auth_router
 from app.users.router import router as users_router
 from app.items.router import router as items_router
 from app.tagging.router import router as tagging_router
+from app.tagging.lambda_router import router as lambda_docs_router
 from app.matching.router import router as matching_router
 
 logging.basicConfig(level=logging.INFO)
@@ -61,6 +62,7 @@ app.include_router(auth_router,     prefix=f"{API_PREFIX}/auth",    tags=["Auth"
 app.include_router(users_router,    prefix=f"{API_PREFIX}/users",   tags=["Users"])
 app.include_router(items_router,    prefix=f"{API_PREFIX}/items",   tags=["Items"])
 app.include_router(tagging_router,  prefix=f"{API_PREFIX}/items",   tags=["Tagging"])
+app.include_router(lambda_docs_router, tags=["Upload (Lambda)"])
 app.include_router(matching_router, prefix=f"{API_PREFIX}", tags=["Matching"])
 
 
