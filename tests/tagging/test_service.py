@@ -33,6 +33,7 @@ from app.tagging.service import process_tags, _build_image_url
 def _make_item(
     id=1,
     category="기타",
+    item_name="",
     raw_text="에어팟 케이스 잃어버렸어요",
     image_url=None,
     features=None,
@@ -41,6 +42,7 @@ def _make_item(
     item = MagicMock()
     item.id = id
     item.category = category
+    item.item_name = item_name
     item.raw_text = raw_text
     item.image_url = image_url
     item.features = features
@@ -63,6 +65,7 @@ def _db_session(item):
     result_mock = MagicMock()
     result_mock.scalars.return_value.first.return_value = item
     db.execute = AsyncMock(return_value=result_mock)
+    db.flush = AsyncMock()
     db.commit = AsyncMock()
     db.rollback = AsyncMock()
     return db
@@ -103,7 +106,7 @@ class TestProcessTagsWithImage:
             patch("app.tagging.service.gemini.extract_from_image", return_value=gemini_result or GEMINI_RESULT) as mock_gemini,
             patch("app.tagging.service.gemini.extract_from_text", return_value=gemini_result or GEMINI_RESULT),
         ):
-            asyncio.run(process_tags(item.id, "items/1/photo.jpg", db))
+            asyncio.run(process_tags(item.id, db, s3_key="items/1/photo.jpg"))
             return item, mock_gemini
 
     def test_features_contains_only_gemini_output(self):
@@ -159,8 +162,8 @@ class TestProcessTagsWithImage:
             patch("app.tagging.service.gemini.extract_from_image", return_value=GEMINI_RESULT),
             patch("app.tagging.service.gemini.extract_from_text", return_value=GEMINI_RESULT),
         ):
-            asyncio.run(process_tags(item.id, "items/1/photo.jpg", db))
-        db.commit.assert_awaited_once()
+            asyncio.run(process_tags(item.id, db, s3_key="items/1/photo.jpg"))
+        db.flush.assert_awaited_once()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -179,7 +182,7 @@ class TestProcessTagsImageDownloadFailure:
             patch("app.tagging.service.gemini.extract_from_image") as mock_img,
             patch("app.tagging.service.gemini.extract_from_text", return_value=text_result) as mock_txt,
         ):
-            asyncio.run(process_tags(item.id, "items/1/photo.jpg", db))
+            asyncio.run(process_tags(item.id, db, s3_key="items/1/photo.jpg"))
 
         mock_img.assert_not_called()
         mock_txt.assert_called_once_with("갈색 지갑")
@@ -197,7 +200,7 @@ class TestProcessTagsImageDownloadFailure:
             patch("app.tagging.service.gemini.extract_from_image", side_effect=Exception()),
             patch("app.tagging.service.gemini.extract_from_text", side_effect=Exception()),
         ):
-            asyncio.run(process_tags(item.id, "items/1/photo.jpg", db))
+            asyncio.run(process_tags(item.id, db, s3_key="items/1/photo.jpg"))
 
         assert item.category == "원래카테고리"
 
@@ -219,7 +222,7 @@ class TestProcessTagsGeminiFailure:
             patch("app.tagging.service.gemini.extract_from_image", side_effect=Exception("Gemini down")),
             patch("app.tagging.service.gemini.extract_from_text", side_effect=Exception("Gemini down")),
         ):
-            asyncio.run(process_tags(item.id, "items/1/photo.jpg", db))
+            asyncio.run(process_tags(item.id, db, s3_key="items/1/photo.jpg"))
 
         assert item.features == REKOGNITION_LABELS
         assert item.category == "기타"
@@ -236,5 +239,5 @@ class TestProcessTagsItemNotFound:
         db.execute = AsyncMock(return_value=result_mock)
         db.commit = AsyncMock()
 
-        asyncio.run(process_tags(999, "items/999/photo.jpg", db))
+        asyncio.run(process_tags(999, db, s3_key="items/999/photo.jpg"))
         db.commit.assert_not_awaited()

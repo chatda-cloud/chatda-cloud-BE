@@ -107,32 +107,48 @@ class TestExtractFromImage:
         mock.text = json.dumps(data)
         return mock
 
+    def _patch_client(self, response):
+        patcher = patch("app.tagging.gemini.genai.Client")
+        MockClient = patcher.start()
+        mock_instance = MockClient.return_value.__enter__.return_value
+        mock_instance.models.generate_content.return_value = response
+        return patcher, mock_instance
+
     def test_returns_parsed_dict(self):
-        with patch.object(gemini._client.models, "generate_content", return_value=self._mock_response()):
+        patcher, _ = self._patch_client(self._mock_response())
+        try:
             result = gemini.extract_from_image(b"fake_image")
+        finally:
+            patcher.stop()
         assert result["category"] == "이어폰/에어팟"
 
     def test_prompt_includes_rekognition_labels(self):
-        with patch.object(gemini._client.models, "generate_content", return_value=self._mock_response()) as mock_gen:
-            gemini.extract_from_image(
-                b"fake_image",
-                rekognition_labels=["Earphone", "Electronic"],
-            )
-        _, kwargs = mock_gen.call_args
+        patcher, mock_instance = self._patch_client(self._mock_response())
+        try:
+            gemini.extract_from_image(b"fake_image", rekognition_labels=["Earphone", "Electronic"])
+        finally:
+            patcher.stop()
+        _, kwargs = mock_instance.models.generate_content.call_args
         prompt_text = str(kwargs["contents"][-1])
         assert "Earphone, Electronic" in prompt_text
 
     def test_prompt_includes_user_text(self):
-        with patch.object(gemini._client.models, "generate_content", return_value=self._mock_response()) as mock_gen:
+        patcher, mock_instance = self._patch_client(self._mock_response())
+        try:
             gemini.extract_from_image(b"fake_image", user_text="에어팟 케이스 분실")
-        _, kwargs = mock_gen.call_args
+        finally:
+            patcher.stop()
+        _, kwargs = mock_instance.models.generate_content.call_args
         prompt_text = str(kwargs["contents"][-1])
         assert "에어팟 케이스 분실" in prompt_text
 
     def test_prompt_omits_hint_section_when_no_hints(self):
-        with patch.object(gemini._client.models, "generate_content", return_value=self._mock_response()) as mock_gen:
+        patcher, mock_instance = self._patch_client(self._mock_response())
+        try:
             gemini.extract_from_image(b"fake_image")
-        _, kwargs = mock_gen.call_args
+        finally:
+            patcher.stop()
+        _, kwargs = mock_instance.models.generate_content.call_args
         prompt_text = str(kwargs["contents"][-1])
         assert "AI 객체 탐지 결과 (힌트)" not in prompt_text
         assert "사용자 설명" not in prompt_text
@@ -149,7 +165,9 @@ class TestExtractFromText:
 
     def test_returns_parsed_dict(self):
         expected = {"category": "지갑", "color": ["갈색"], "features": ["카드 슬롯"]}
-        with patch.object(gemini._client.models, "generate_content", return_value=self._mock_response(expected)):
-            result = gemini.extract_from_text("갈색 지갑 분실했어요")
+        with patch("app.tagging.gemini.genai.Client") as MockClient:
+            mock_instance = MockClient.return_value.__enter__.return_value
+            mock_instance.models.generate_content.return_value = self._mock_response(expected)
+            result = gemini.extract_from_text("갈색 지갑", "분실했어요")
         assert result["category"] == "지갑"
         assert result["color"] == ["갈색"]
