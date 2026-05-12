@@ -10,7 +10,7 @@ class ProcessTagsRequest(BaseModel):
 class TagsResponse(BaseModel):
     item_id: int = Field(..., alias="itemId")
     category: str | None = None
-    ai_tags: list[str] = Field(..., alias="aiTags")
+    features: list[str] = Field(..., alias="features")
     has_vector: bool = Field(..., alias="hasVector")
     image_url: str | None = Field(None, alias="imageUrl")
 
