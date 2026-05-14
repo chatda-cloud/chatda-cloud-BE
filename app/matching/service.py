@@ -34,6 +34,16 @@ W_DATE = 0.1
 TOP_K = 50  # pgvector로 뽑을 최대 후보 수
 
 
+def _aws_client(service_name: str):
+    kwargs = {"region_name": AWS_REGION}
+    if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+        kwargs.update(
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+        )
+    return boto3.client(service_name, **kwargs)
+
+
 # ── 유사도 계산 헬퍼 ───────────────────────────────────────
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     va, vb = np.array(a), np.array(b)
@@ -77,12 +87,7 @@ def _final_score(lost: LostItem, found: FoundItem) -> float:
 
 # ── SNS 푸시 ──────────────────────────────────────────────
 def _send_sns(message: str, subject: str) -> None:
-    client = boto3.client(
-        "sns",
-        region_name=AWS_REGION,
-        aws_access_key_id=AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-    )
+    client = _aws_client("sns")
     client.publish(TopicArn=SNS_TOPIC_ARN, Message=message, Subject=subject)
 
 

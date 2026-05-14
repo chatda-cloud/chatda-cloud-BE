@@ -5,17 +5,25 @@ on:
     branches:
       - develop
       - main
+      - feature/gitops-terraform
     paths:
       - "app/**"
       - "Dockerfile"
       - "requirements.txt"
+      - ".github/workflows/deploy-ecs.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # GitHub OIDC 토큰 발급에 필요
+  contents: read
 
 env:
   AWS_REGION: ap-northeast-2
-  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-  ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
-  ECS_SERVICE: ${{ secrets.ECS_SERVICE }}
-  CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY || vars.ECR_REPOSITORY || 'chatda-mvp-fastapi' }}
+  ECS_CLUSTER: ${{ secrets.ECS_CLUSTER || vars.ECS_CLUSTER || 'chatda-mvp-cluster' }}
+  ECS_SERVICE: ${{ secrets.ECS_SERVICE || vars.ECS_SERVICE || 'chatda-mvp-fastapi' }}
+  ECS_TASK_DEFINITION: ${{ secrets.ECS_TASK_DEFINITION || vars.ECS_TASK_DEFINITION || 'chatda-mvp-fastapi' }}
+  CONTAINER_NAME: ${{ secrets.CONTAINER_NAME || vars.CONTAINER_NAME || 'fastapi' }}
 
 jobs:
   deploy:
@@ -26,31 +34,56 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      # ── OIDC 인증: Terraform이 생성한 GitHub Actions IAM Role 사용 ──
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push image to ECR
-        id: build-image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Validate deployment settings
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          test -n "$ECR_REPOSITORY" || { echo "ECR_REPOSITORY is empty"; exit 1; }
+          test -n "$ECS_CLUSTER" || { echo "ECS_CLUSTER is empty"; exit 1; }
+          test -n "$ECS_SERVICE" || { echo "ECS_SERVICE is empty"; exit 1; }
+          test -n "$ECS_TASK_DEFINITION" || { echo "ECS_TASK_DEFINITION is empty"; exit 1; }
+          test -n "$CONTAINER_NAME" || { echo "CONTAINER_NAME is empty"; exit 1; }
+          echo "ECR_REPOSITORY=$ECR_REPOSITORY"
+          echo "ECS_CLUSTER=$ECS_CLUSTER"
+          echo "ECS_SERVICE=$ECS_SERVICE"
+          echo "ECS_TASK_DEFINITION=$ECS_TASK_DEFINITION"
+          echo "CONTAINER_NAME=$CONTAINER_NAME"
+
+      # ── ARM64 멀티 플랫폼 빌드: Terraform ECS task가 ARM64 아키텍처 사용 ──
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up QEMU (ARM64 cross-build)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/arm64
+
+      - name: Build and push image to ECR
+        id: build-image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/arm64
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Download current task definition
         run: |
           aws ecs describe-task-definition \
-            --task-definition ${{ secrets.ECS_TASK_DEFINITION }} \
+            --task-definition "$ECS_TASK_DEFINITION" \
             --query taskDefinition \
             > task-definition.json
 
@@ -60,7 +93,7 @@ jobs:
         with:
           task-definition: task-definition.json
           container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ steps.build-image.outputs.image }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
       - name: Deploy to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2

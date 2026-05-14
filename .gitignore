@@ -36,3 +36,13 @@ lambda/*.zip
 
 # Claude
 CLAUDE.local.md
+
+# Terraform
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/*.tfplan
+infra/*.zip
+infra/tfplan
+infra/.terraform.lock.hcl
+infra/terraform.tfvars

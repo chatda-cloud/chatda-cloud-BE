@@ -17,17 +17,22 @@ logger = logging.getLogger(__name__)
 PENDING_CATEGORY = "분류중"
 
 
+def _aws_client(service_name: str):
+    kwargs = {"region_name": AWS_REGION}
+    if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+        kwargs.update(
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+        )
+    return boto3.client(service_name, **kwargs)
+
+
 def _build_image_url(s3_key: str) -> str:
     return f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
 
 
 def _download_s3_image(s3_key: str) -> tuple[bytes, PILImage.Image]:
-    s3 = boto3.client(
-        "s3",
-        region_name=AWS_REGION,
-        aws_access_key_id=AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-    )
+    s3 = _aws_client("s3")
     obj = s3.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
     data = obj["Body"].read()
     return data, PILImage.open(io.BytesIO(data)).convert("RGB")
