@@ -14,6 +14,7 @@ permissions:
 
 env:
   AWS_REGION: ap-northeast-2
+  LAMBDA_FUNCTION_NAME: ${{ secrets.LAMBDA_FUNCTION_NAME || vars.LAMBDA_FUNCTION_NAME || 'chatda-mvp-presigned-url' }}
 
 jobs:
   deploy:
@@ -48,11 +49,13 @@ jobs:
 
       - name: Deploy to Lambda
         run: |
+          test -n "$LAMBDA_FUNCTION_NAME" || { echo "LAMBDA_FUNCTION_NAME is empty"; exit 1; }
+          echo "LAMBDA_FUNCTION_NAME=$LAMBDA_FUNCTION_NAME"
           aws lambda update-function-code \
-            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+            --function-name "$LAMBDA_FUNCTION_NAME" \
             --zip-file fileb://lambda.zip
 
       - name: Wait for update to complete
         run: |
           aws lambda wait function-updated \
-            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }}
+            --function-name "$LAMBDA_FUNCTION_NAME"

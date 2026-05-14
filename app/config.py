@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import quote_plus
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -17,7 +18,12 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:8080"]
 
     # ── 데이터베이스 ──────────────────────────────────────
-    DATABASE_URL: str
+    DATABASE_URL: str = ""
+    DB_HOST: str = ""
+    DB_PORT: int = 5432
+    DB_NAME: str = ""
+    DB_USER: str = ""
+    DB_PASSWORD: str = ""
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
     DB_POOL_TIMEOUT: int = 30
@@ -30,15 +36,15 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # ── AWS ───────────────────────────────────────────────
-    AWS_ACCESS_KEY_ID: str
-    AWS_SECRET_ACCESS_KEY: str
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
     AWS_REGION: str = "ap-northeast-2"
     S3_BUCKET_NAME: str
     S3_PRESIGNED_URL_EXPIRE: int = 3600
     SNS_TOPIC_ARN: str
 
     # ── AI ────────────────────────────────────────────────
-    GEMINI_API_KEY: str
+    GEMINI_API_KEY: str = ""
     CLIP_MODEL_NAME: str = "ViT-B/32"
     MATCH_THRESHOLD: float = 0.7
     VECTOR_WEIGHT: float = 0.8
@@ -56,12 +62,25 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URL")
     @classmethod
     def validate_db_url(cls, v: str) -> str:
+        if not v:
+            return v
         if not v.startswith("postgresql+asyncpg://"):
             raise ValueError(
                 "DATABASE_URL must use asyncpg driver: "
                 "postgresql+asyncpg://user:password@host:port/dbname"
             )
         return v
+
+    @property
+    def database_url(self) -> str:
+        if self.DATABASE_URL:
+            return self.DATABASE_URL
+        if all([self.DB_HOST, self.DB_NAME, self.DB_USER, self.DB_PASSWORD]):
+            return (
+                f"postgresql+asyncpg://{quote_plus(self.DB_USER)}:"
+                f"{quote_plus(self.DB_PASSWORD)}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+            )
+        raise ValueError("DATABASE_URL or DB_HOST/DB_NAME/DB_USER/DB_PASSWORD must be set")
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -99,5 +118,5 @@ AWS_SECRET_ACCESS_KEY = _s.AWS_SECRET_ACCESS_KEY
 AWS_REGION = _s.AWS_REGION
 S3_BUCKET_NAME = _s.S3_BUCKET_NAME
 
-DATABASE_URL = _s.DATABASE_URL
+DATABASE_URL = _s.database_url
 SNS_TOPIC_ARN = _s.SNS_TOPIC_ARN
