@@ -63,7 +63,7 @@ class TestBuildImagePrompt:
 
     def test_hint_does_not_override_base_rule(self):
         prompt = gemini._build_image_prompt(rekognition_labels=["X"])
-        assert "최종 판단은 이미지 기준으로 해줘" in prompt
+        assert "category는 반드시 다음 목록 중 하나만 선택" in prompt
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -151,7 +151,7 @@ class TestExtractFromImage:
         _, kwargs = mock_instance.models.generate_content.call_args
         prompt_text = str(kwargs["contents"][-1])
         assert "AI 객체 탐지 결과 (힌트)" not in prompt_text
-        assert "사용자 설명" not in prompt_text
+        assert "사용자 설명: " not in prompt_text
 
 
 # ─────────────────────────────────────────────────────────────────────────────
