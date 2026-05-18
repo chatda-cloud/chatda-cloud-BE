@@ -1,9 +1,7 @@
-"""items 비즈니스 로직 - 등록 시 태깅 자동 실행. 매칭은 router에서 BackgroundTasks로 처리."""
-import io
+"""items 비즈니스 로직 - DB 저장만 수행. 태깅·매칭은 router에서 BackgroundTasks로 처리."""
 import logging
 
 from fastapi import HTTPException
-from PIL import Image as PILImage
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -19,7 +17,7 @@ from app.items.schema import (
     LostItemUpdate,
 )
 from app.models import FoundItem, Item, ItemStatus, LostItem
-from app.tagging.service import PENDING_CATEGORY, process_tags
+from app.tagging.service import PENDING_CATEGORY
 
 logger = logging.getLogger(__name__)
 
@@ -89,19 +87,16 @@ def check_owner(item_user_id: int, current_user_id: int) -> None:
         })
 
 
-# ── 분실물 등록 (태깅만 수행, 매칭은 router에서 BackgroundTasks로) ──
+# ── 분실물 등록 (DB 저장만, 태깅·매칭은 router에서 BackgroundTasks로) ──
 async def create_lost_item(
     db: AsyncSession,
     user_id: int,
     body: LostItemCreate,
-    image_bytes: bytes | None = None,
 ) -> ItemRegisterResponse:
-    # 1. Item 생성
     item = Item(user_id=user_id, category=PENDING_CATEGORY, status=ItemStatus.LOST)
     db.add(item)
     await db.flush()
 
-    # 2. LostItem 생성
     lost_item = LostItem(
         item_id=item.id,
         item_name=body.item_name,
@@ -113,45 +108,26 @@ async def create_lost_item(
     db.add(lost_item)
     await db.flush()
 
-    # 3. 이미지 PIL 변환
-    image_pil: PILImage.Image | None = None
-    if image_bytes:
-        try:
-            image_pil = PILImage.open(io.BytesIO(image_bytes)).convert("RGB")
-        except Exception:
-            logger.warning("이미지 변환 실패 (item_id=%d)", item.id)
-
-    # 4. 태깅 (category, features, item_vector 자동 추출)
-    tag_result = await process_tags(
-        item_id=item.id,
-        db=db,
-        image_bytes=image_bytes,
-        image_pil=image_pil,
-    )
-
     return ItemRegisterResponse(
         item_id=item.id,
         item_name=body.item_name,
-        category=tag_result.get("category", PENDING_CATEGORY),
-        features=tag_result.get("features", []),
-        image_url=tag_result.get("image_url"),
-        matched_count=0,  # 매칭은 백그라운드에서 처리
+        category=PENDING_CATEGORY,
+        features=[],
+        image_url=None,
+        matched_count=0,
     )
 
 
-# ── 습득물 등록 (태깅만 수행, 매칭은 router에서 BackgroundTasks로) ──
+# ── 습득물 등록 (DB 저장만, 태깅·매칭은 router에서 BackgroundTasks로) ──
 async def create_found_item(
     db: AsyncSession,
     user_id: int,
     body: FoundItemCreate,
-    image_bytes: bytes | None = None,
 ) -> ItemRegisterResponse:
-    # 1. Item 생성
     item = Item(user_id=user_id, category=PENDING_CATEGORY, status=ItemStatus.FOUND)
     db.add(item)
     await db.flush()
 
-    # 2. FoundItem 생성
     found_item = FoundItem(
         item_id=item.id,
         item_name=body.item_name,
@@ -162,28 +138,12 @@ async def create_found_item(
     db.add(found_item)
     await db.flush()
 
-    # 3. 이미지 PIL 변환
-    image_pil: PILImage.Image | None = None
-    if image_bytes:
-        try:
-            image_pil = PILImage.open(io.BytesIO(image_bytes)).convert("RGB")
-        except Exception:
-            logger.warning("이미지 변환 실패 (item_id=%d)", item.id)
-
-    # 4. 태깅
-    tag_result = await process_tags(
-        item_id=item.id,
-        db=db,
-        image_bytes=image_bytes,
-        image_pil=image_pil,
-    )
-
     return ItemRegisterResponse(
         item_id=item.id,
         item_name=body.item_name,
-        category=tag_result.get("category", PENDING_CATEGORY),
-        features=tag_result.get("features", []),
-        image_url=tag_result.get("image_url"),
+        category=PENDING_CATEGORY,
+        features=[],
+        image_url=None,
         matched_count=0,
     )
 

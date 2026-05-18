@@ -1,10 +1,22 @@
 import json
 import uuid
-import boto3
 import os
+import boto3
+from botocore.config import Config
 
-s3 = boto3.client("s3", region_name=os.environ["AWS_REGION"])
+REGION = os.environ["AWS_REGION"]
 BUCKET = os.environ["S3_BUCKET_NAME"]
+
+# addressing_style="virtual" + signature_version="s3v4" 조합으로
+# https://{bucket}.s3.{region}.amazonaws.com/... 형태의 리전 presigned URL 생성
+s3 = boto3.client(
+    "s3",
+    region_name=REGION,
+    config=Config(
+        signature_version="s3v4",
+        s3={"addressing_style": "virtual"},
+    ),
+)
 
 
 def lambda_handler(event, context):
