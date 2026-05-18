@@ -38,7 +38,7 @@ async def process_tags(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    background_tasks.add_task(service.process_tags, item_id, body.s3_key, db)
+    background_tasks.add_task(service.process_tags, item_id, db, s3_key=body.s3_key)
     return {"success": True, "message": "태깅 처리가 시작되었습니다."}
 
 

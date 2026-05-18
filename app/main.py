@@ -1,7 +1,8 @@
 import logging
+import signal
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -20,18 +21,47 @@ from app.matching.router import router as matching_router
 
 logging.basicConfig(level=logging.INFO)
 settings = get_settings()
+is_shutting_down = False
+
+
+def mark_shutting_down():
+    global is_shutting_down
+    is_shutting_down = True
+
+
+def install_shutdown_signal_handlers():
+    previous_handlers = {}
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        previous_handlers[sig] = signal.getsignal(sig)
+
+        def handler(signum, frame, previous=previous_handlers[sig]):
+            mark_shutting_down()
+            logging.info("Received shutdown signal %s; health checks will return 503", signum)
+            if callable(previous):
+                previous(signum, frame)
+
+        signal.signal(sig, handler)
+
+    return previous_handlers
 
 
 # ── 앱 수명주기 ────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    previous_signal_handlers = install_shutdown_signal_handlers()
     # startup: DB 테이블 생성 (개발 환경) / 프로덕션에선 Alembic 사용
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
-    yield
-    # shutdown: 커넥션 풀 정리
-    await engine.dispose()
+    try:
+        yield
+    finally:
+        mark_shutting_down()
+        for sig, previous in previous_signal_handlers.items():
+            signal.signal(sig, previous)
+        # shutdown: 커넥션 풀 정리
+        await engine.dispose()
 
 
 # ── 앱 초기화 ──────────────────────────────────────────────
@@ -78,4 +108,6 @@ async def global_exception_handler(request: Request, exc: Exception):
 # ── 헬스체크 ───────────────────────────────────────────────
 @app.get("/health", tags=["Health"])
 async def health_check():
+    if is_shutting_down:
+        raise HTTPException(status_code=503, detail="shutting down")
     return {"status": "ok", "env": settings.ENV}

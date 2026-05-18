@@ -1,0 +1,19 @@
+project      = "chatda"
+environment  = "mvp"
+aws_region   = "ap-northeast-2"
+github_org   = "YOUR_GITHUB_ORG_OR_OWNER"
+github_repo  = "YOUR_REPO"
+github_branch = "develop"
+github_branches = ["develop", "main", "feature/gitops-terraform"]
+# 기존 provider ARN을 직접 지정하려면 사용하세요. 비워두면 AWS account의 GitHub OIDC provider를 조회합니다.
+# github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+
+# 실제 apply 전 안전한 값으로 교체하세요.
+db_password = "CHANGE_ME_Use_At_Least_16_Chars_123!"
+
+# FastAPI image를 ECR에 push한 뒤 outputs.ecr_repository_url:tag 로 교체하세요.
+# app_image = "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/chatda-mvp-fastapi:main"
+
+# 선택
+# ecr_force_delete = true
+# alarm_email = "you@example.com"

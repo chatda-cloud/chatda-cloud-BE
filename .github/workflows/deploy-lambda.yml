@@ -8,8 +8,13 @@ on:
     paths:
       - "lambda/**"
 
+permissions:
+  id-token: write   # GitHub OIDC 토큰 발급에 필요
+  contents: read
+
 env:
   AWS_REGION: ap-northeast-2
+  LAMBDA_FUNCTION_NAME: ${{ secrets.LAMBDA_FUNCTION_NAME || vars.LAMBDA_FUNCTION_NAME || 'chatda-mvp-presigned-url' }}
 
 jobs:
   deploy:
@@ -20,11 +25,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      # ── OIDC 인증: Terraform이 생성한 GitHub Actions IAM Role 사용 ──
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Set up Python
@@ -44,11 +49,13 @@ jobs:
 
       - name: Deploy to Lambda
         run: |
+          test -n "$LAMBDA_FUNCTION_NAME" || { echo "LAMBDA_FUNCTION_NAME is empty"; exit 1; }
+          echo "LAMBDA_FUNCTION_NAME=$LAMBDA_FUNCTION_NAME"
           aws lambda update-function-code \
-            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+            --function-name "$LAMBDA_FUNCTION_NAME" \
             --zip-file fileb://lambda.zip
 
       - name: Wait for update to complete
         run: |
           aws lambda wait function-updated \
-            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }}
+            --function-name "$LAMBDA_FUNCTION_NAME"
