@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     AWS_REGION: str = "ap-northeast-2"
     S3_BUCKET_NAME: str
     S3_PRESIGNED_URL_EXPIRE: int = 3600
-    SNS_TOPIC_ARN: str
+    SNS_TOPIC_ARN: str = ""
 
     # ── AI ────────────────────────────────────────────────
     GEMINI_API_KEY: str

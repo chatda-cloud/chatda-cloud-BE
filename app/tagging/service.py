@@ -1,6 +1,7 @@
 import asyncio
 import io
 import logging
+import time
 
 import boto3
 from PIL import Image as PILImage
@@ -65,68 +66,104 @@ async def process_tags(
         logger.warning("process_tags: detail not found for item %d", item_id)
         return {}
 
+    t_total = time.monotonic()
     loop = asyncio.get_running_loop()
+    logger.info(
+        "태깅 시작 (item_id=%d, item_name=%s, s3_key=%s)",
+        item_id, detail.item_name, s3_key or "없음",
+    )
 
-    # ── 이미지 준비 ───────────────────────────────────────
+    # ── 이미지 준비 (S3 다운로드) ────────────────────────
     if image_bytes is None and s3_key:
+        logger.info("S3 다운로드 시작 (item_id=%d, key=%s)", item_id, s3_key)
+        t0 = time.monotonic()
         try:
             image_bytes, image_pil = await loop.run_in_executor(
                 None, _download_s3_image, s3_key
             )
+            logger.info(
+                "S3 다운로드 완료 (item_id=%d, size=%d bytes, %.2fs)",
+                item_id, len(image_bytes), time.monotonic() - t0,
+            )
         except Exception:
-            logger.exception("S3 다운로드 실패 (item_id=%d)", item_id)
+            logger.exception("S3 다운로드 실패 (item_id=%d, %.2fs)", item_id, time.monotonic() - t0)
 
     # ── 1. Rekognition → 힌트 라벨 ───────────────────────
     rek_labels: list[str] = []
     if s3_key:
+        logger.info("Rekognition 시작 (item_id=%d, bucket=%s, key=%s)", item_id, S3_BUCKET_NAME, s3_key)
+        t0 = time.monotonic()
         try:
             rek_labels = await loop.run_in_executor(
                 None, rekognition.detect_labels, s3_key
             )
+            logger.info(
+                "Rekognition 완료 (item_id=%d, labels=%s, %.2fs)",
+                item_id, rek_labels, time.monotonic() - t0,
+            )
         except Exception:
-            logger.exception("Rekognition 실패 (item_id=%d)", item_id)
+            logger.exception("Rekognition 실패 (item_id=%d, %.2fs)", item_id, time.monotonic() - t0)
+    else:
+        logger.info("Rekognition 건너뜀 (item_id=%d, s3_key 없음)", item_id)
 
     # ── 2. CLIP → item_vector ─────────────────────────────
-    # item_name + raw_text 결합으로 텍스트 임베딩 품질 향상
     item_vector: list[float] | None = None
+    t0 = time.monotonic()
     try:
         if image_pil:
+            logger.info("CLIP 이미지 인코딩 시작 (item_id=%d)", item_id)
             item_vector = await loop.run_in_executor(
                 None, clip.encode_image_from_pil, image_pil
             )
         else:
             text = f"{detail.item_name} {detail.raw_text or ''}".strip()
             if text:
+                logger.info("CLIP 텍스트 인코딩 시작 (item_id=%d, text=%r)", item_id, text[:60])
                 item_vector = await loop.run_in_executor(
                     None, clip.encode_text, text
                 )
+        logger.info(
+            "CLIP 완료 (item_id=%d, vector_dim=%s, %.2fs)",
+            item_id, len(item_vector) if item_vector else "없음", time.monotonic() - t0,
+        )
     except Exception:
-        logger.exception("CLIP 인코딩 실패 (item_id=%d)", item_id)
+        logger.exception("CLIP 인코딩 실패 (item_id=%d, %.2fs)", item_id, time.monotonic() - t0)
 
     # ── 3. Gemini → category + features ──────────────────
-    # item_name을 힌트로 제공해 category 정확도 향상
     gemini_result: dict | None = None
     user_hint = f"{detail.item_name}: {detail.raw_text or ''}".strip(": ")
 
     if image_bytes:
+        logger.info("Gemini 이미지 분석 시작 (item_id=%d, hint=%r, rek_labels=%s)", item_id, user_hint[:60], rek_labels)
+        t0 = time.monotonic()
         try:
             gemini_result = await loop.run_in_executor(
                 None,
                 gemini.extract_from_image,
                 image_bytes,
                 rek_labels or None,
-                user_hint,          # item_name + raw_text 함께 전달
+                user_hint,
+            )
+            logger.info(
+                "Gemini 이미지 분석 완료 (item_id=%d, result=%s, %.2fs)",
+                item_id, gemini_result, time.monotonic() - t0,
             )
         except Exception:
-            logger.exception("Gemini 이미지 분석 실패 (item_id=%d)", item_id)
+            logger.exception("Gemini 이미지 분석 실패 (item_id=%d, %.2fs)", item_id, time.monotonic() - t0)
 
     if gemini_result is None:
+        logger.info("Gemini 텍스트 분석 시작 (item_id=%d, hint=%r)", item_id, user_hint[:60])
+        t0 = time.monotonic()
         try:
             gemini_result = await loop.run_in_executor(
                 None, gemini.extract_from_text, user_hint
             )
+            logger.info(
+                "Gemini 텍스트 분석 완료 (item_id=%d, result=%s, %.2fs)",
+                item_id, gemini_result, time.monotonic() - t0,
+            )
         except Exception:
-            logger.exception("Gemini 텍스트 분석 실패 (item_id=%d)", item_id)
+            logger.exception("Gemini 텍스트 분석 실패 (item_id=%d, %.2fs)", item_id, time.monotonic() - t0)
 
     # ── 4. DB 저장 ────────────────────────────────────────
     features: list[str] = []
@@ -148,8 +185,10 @@ async def process_tags(
 
     await db.flush()
     logger.info(
-        "태깅 완료 (item_id=%d, item_name=%s, category=%s, features=%s)",
+        "태깅 완료 (item_id=%d, item_name=%s, category=%s, features=%s, "
+        "has_vector=%s, image_url=%s, 총소요=%.2fs)",
         item_id, detail.item_name, category, features,
+        item_vector is not None, image_url, time.monotonic() - t_total,
     )
 
     return {
