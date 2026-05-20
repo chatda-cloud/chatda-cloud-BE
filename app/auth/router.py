@@ -113,10 +113,10 @@ async def logout(
 
 @router.post("/exchange")
 async def social_exchange(body: SocialExchangeRequest, db: AsyncSession = Depends(get_db)):
-    if body.provider not in ("kakao", "google", "apple"):
+    if body.provider not in ("kakao", "google", "naver"):
         raise HTTPException(status_code=400, detail={
             "success": False, "code": 400,
-            "message": "지원하지 않는 provider입니다. (kakao | google | apple)", "data": None,
+            "message": "지원하지 않는 provider입니다. (kakao | google | naver)", "data": None,
         })
 
     try:

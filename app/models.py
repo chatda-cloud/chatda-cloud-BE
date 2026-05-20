@@ -35,6 +35,8 @@ class User(Base):
     gender: Mapped[str | None] = mapped_column(String(10), nullable=True)
     birthdate: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
     profile_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    social_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
     refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     pw_reset_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     pw_reset_expires: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)

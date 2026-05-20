@@ -44,6 +44,16 @@ class Settings(BaseSettings):
     VECTOR_WEIGHT: float = 0.8
     TAG_WEIGHT: float = 0.2
 
+    # ── 소셜 로그인 ───────────────────────────────────────
+    KAKAO_CLIENT_ID: str = ""
+    KAKAO_REDIRECT_URI: str = ""
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = ""
+    NAVER_CLIENT_ID: str = ""
+    NAVER_CLIENT_SECRET: str = ""
+    NAVER_REDIRECT_URI: str = ""
+
     # ── SMTP (비밀번호 재설정 이메일) ──────────────────────
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
@@ -101,3 +111,12 @@ S3_BUCKET_NAME = _s.S3_BUCKET_NAME
 
 DATABASE_URL = _s.DATABASE_URL
 SNS_TOPIC_ARN = _s.SNS_TOPIC_ARN
+
+KAKAO_CLIENT_ID = _s.KAKAO_CLIENT_ID
+KAKAO_REDIRECT_URI = _s.KAKAO_REDIRECT_URI
+GOOGLE_CLIENT_ID = _s.GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET = _s.GOOGLE_CLIENT_SECRET
+GOOGLE_REDIRECT_URI = _s.GOOGLE_REDIRECT_URI
+NAVER_CLIENT_ID = _s.NAVER_CLIENT_ID
+NAVER_CLIENT_SECRET = _s.NAVER_CLIENT_SECRET
+NAVER_REDIRECT_URI = _s.NAVER_REDIRECT_URI
