@@ -29,8 +29,6 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
-        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS social_id VARCHAR(100)"))
-        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS provider VARCHAR(20)"))
     yield
     # shutdown: 커넥션 풀 정리
     await engine.dispose()
