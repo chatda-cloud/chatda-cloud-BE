@@ -3,6 +3,8 @@ import asyncio
 import logging
 import secrets
 import smtplib
+
+import httpx
 from datetime import date, datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -17,6 +19,8 @@ from app.config import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     JWT_ALGORITHM,
     JWT_SECRET,
+    KAKAO_CLIENT_ID,
+    KAKAO_REDIRECT_URI,
     PW_RESET_BASE_URL,
     REFRESH_TOKEN_EXPIRE_DAYS,
     SMTP_HOST,
@@ -119,15 +123,60 @@ async def clear_refresh_token(db: AsyncSession, user: User) -> None:
 
 # ── 소셜 로그인 ───────────────────────────────────────────
 async def exchange_social_code(db: AsyncSession, provider: str, code: str) -> User:
-    """
-    소셜 로그인 코드를 유저 정보로 교환한다.
-    실제 구현 시 provider별 OAuth API 호출 필요.
-    """
-    # TODO: provider별 실제 OAuth 코드 교환 구현
-    #   kakao  → https://kauth.kakao.com/oauth/token
-    #   google → https://oauth2.googleapis.com/token
-    #   apple  → https://appleid.apple.com/auth/token
+    if provider == "kakao":
+        return await _exchange_kakao(db, code)
     raise NotImplementedError(f"소셜 로그인 미구현: provider={provider}")
+
+
+async def _exchange_kakao(db: AsyncSession, code: str) -> User:
+    async with httpx.AsyncClient() as client:
+        # 1. 인가 코드 → 액세스 토큰
+        token_res = await client.post(
+            "https://kauth.kakao.com/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": KAKAO_CLIENT_ID,
+                "redirect_uri": KAKAO_REDIRECT_URI,
+                "code": code,
+            },
+        )
+        token_res.raise_for_status()
+        access_token = token_res.json()["access_token"]
+
+        # 2. 액세스 토큰 → 유저 정보
+        user_res = await client.get(
+            "https://kapi.kakao.com/v2/user/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        user_res.raise_for_status()
+        user_data = user_res.json()
+
+    kakao_id = str(user_data["id"])
+    profile = user_data.get("kakao_account", {}).get("profile", {})
+    nickname = profile.get("nickname") or f"user_{kakao_id[-6:]}"
+    profile_image = profile.get("profile_image_url")
+
+    # 3. 기존 유저 조회 → 없으면 자동 가입
+    result = await db.execute(
+        select(User).where(User.social_id == kakao_id, User.provider == "kakao")
+    )
+    user = result.scalars().first()
+
+    if user is None:
+        user = User(
+            user_id=f"kakao_{kakao_id}",
+            email=f"kakao_{kakao_id}@chatda.social",
+            password=None,
+            username=nickname,
+            social_id=kakao_id,
+            provider="kakao",
+            profile_image_url=profile_image,
+        )
+        db.add(user)
+        await db.flush()
+        await db.refresh(user)
+
+    return user
 
 
 # ── 비밀번호 재설정 ───────────────────────────────────────
