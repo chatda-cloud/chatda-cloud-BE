@@ -21,6 +21,12 @@ from app.config import (
     JWT_SECRET,
     KAKAO_CLIENT_ID,
     KAKAO_REDIRECT_URI,
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    GOOGLE_REDIRECT_URI,
+    NAVER_CLIENT_ID,
+    NAVER_CLIENT_SECRET,
+    NAVER_REDIRECT_URI,
     PW_RESET_BASE_URL,
     REFRESH_TOKEN_EXPIRE_DAYS,
     SMTP_HOST,
@@ -125,6 +131,10 @@ async def clear_refresh_token(db: AsyncSession, user: User) -> None:
 async def exchange_social_code(db: AsyncSession, provider: str, code: str) -> User:
     if provider == "kakao":
         return await _exchange_kakao(db, code)
+    if provider == "google":
+        return await _exchange_google(db, code)
+    if provider == "naver":
+        return await _exchange_naver(db, code)
     raise NotImplementedError(f"소셜 로그인 미구현: provider={provider}")
 
 
@@ -170,6 +180,105 @@ async def _exchange_kakao(db: AsyncSession, code: str) -> User:
             username=nickname,
             social_id=kakao_id,
             provider="kakao",
+            profile_image_url=profile_image,
+        )
+        db.add(user)
+        await db.flush()
+        await db.refresh(user)
+
+    return user
+
+
+async def _exchange_google(db: AsyncSession, code: str) -> User:
+    async with httpx.AsyncClient() as client:
+        token_res = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "redirect_uri": GOOGLE_REDIRECT_URI,
+                "code": code,
+            },
+        )
+        token_res.raise_for_status()
+        access_token = token_res.json()["access_token"]
+
+        user_res = await client.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        user_res.raise_for_status()
+        user_data = user_res.json()
+
+    google_id = str(user_data["id"])
+    email = user_data.get("email") or f"google_{google_id}@chatda.social"
+    name = user_data.get("name") or f"user_{google_id[-6:]}"
+    profile_image = user_data.get("picture")
+
+    result = await db.execute(
+        select(User).where(User.social_id == google_id, User.provider == "google")
+    )
+    user = result.scalars().first()
+
+    if user is None:
+        user = User(
+            user_id=f"google_{google_id}",
+            email=email,
+            password=None,
+            username=name,
+            social_id=google_id,
+            provider="google",
+            profile_image_url=profile_image,
+        )
+        db.add(user)
+        await db.flush()
+        await db.refresh(user)
+
+    return user
+
+
+async def _exchange_naver(db: AsyncSession, code: str) -> User:
+    async with httpx.AsyncClient() as client:
+        token_res = await client.post(
+            "https://nid.naver.com/oauth2.0/token",
+            params={
+                "grant_type": "authorization_code",
+                "client_id": NAVER_CLIENT_ID,
+                "client_secret": NAVER_CLIENT_SECRET,
+                "redirect_uri": NAVER_REDIRECT_URI,
+                "code": code,
+                "state": "chatda",
+            },
+        )
+        token_res.raise_for_status()
+        access_token = token_res.json()["access_token"]
+
+        user_res = await client.get(
+            "https://openapi.naver.com/v1/nid/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        user_res.raise_for_status()
+        user_data = user_res.json().get("response", {})
+
+    naver_id = str(user_data["id"])
+    email = user_data.get("email") or f"naver_{naver_id}@chatda.social"
+    name = user_data.get("name") or user_data.get("nickname") or f"user_{naver_id[-6:]}"
+    profile_image = user_data.get("profile_image")
+
+    result = await db.execute(
+        select(User).where(User.social_id == naver_id, User.provider == "naver")
+    )
+    user = result.scalars().first()
+
+    if user is None:
+        user = User(
+            user_id=f"naver_{naver_id}",
+            email=email,
+            password=None,
+            username=name,
+            social_id=naver_id,
+            provider="naver",
             profile_image_url=profile_image,
         )
         db.add(user)
