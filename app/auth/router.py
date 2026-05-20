@@ -42,7 +42,7 @@ from app.auth.service import (
     send_pw_reset_email,
 )
 
-router = APIRouter(tags=["auth"])
+router = APIRouter()
 
 
 def _token_response(user: User, access_token: str, refresh_token: str) -> dict:
@@ -111,7 +111,26 @@ async def logout(
 
 # ── 소셜 로그인 코드 교환 ──────────────────────────────────────────────────────
 
-@router.post("/exchange")
+@router.post(
+    "/exchange",
+    summary="소셜 로그인 코드 교환",
+    description="""
+Flutter 앱에서 소셜 로그인 후 받은 인가 코드(authorization code)를 JWT 토큰으로 교환합니다.
+
+**Flutter 연동 흐름:**
+1. `flutter_web_auth_2` 패키지로 소셜 로그인 페이지 열기
+2. 유저 로그인 완료 → 앱이 인가 코드(code) 수신
+3. 이 API에 `provider`와 `code` 전달
+4. 서버가 소셜 provider에 코드 교환 → 유저 정보 조회 → JWT 발급
+
+**provider별 인가 URL:**
+- kakao: `https://kauth.kakao.com/oauth/authorize?client_id=REST_API_키&redirect_uri=YOUR_REDIRECT_URI&response_type=code`
+- google: `https://accounts.google.com/o/oauth2/v2/auth?client_id=CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI&response_type=code&scope=openid email profile`
+- naver: `https://nid.naver.com/oauth2.0/authorize?client_id=CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI&response_type=code&state=chatda`
+
+**redirect_uri:** 앱 커스텀 스킴 사용 권장 (예: `chatda://auth`)
+""",
+)
 async def social_exchange(body: SocialExchangeRequest, db: AsyncSession = Depends(get_db)):
     if body.provider not in ("kakao", "google", "naver"):
         raise HTTPException(status_code=400, detail={
