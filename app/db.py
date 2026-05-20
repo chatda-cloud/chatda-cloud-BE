@@ -1,3 +1,4 @@
+import ssl
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -12,6 +13,10 @@ class Base(DeclarativeBase):
     pass
 
 
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
+
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=(settings.ENV == "development"),
@@ -20,7 +25,7 @@ engine = create_async_engine(
     pool_timeout=settings.DB_POOL_TIMEOUT,
     pool_recycle=settings.DB_POOL_RECYCLE,
     pool_pre_ping=True,
-    connect_args={"ssl": True},
+    connect_args={"ssl": ssl_context},
 )
 
 AsyncSessionLocal = async_sessionmaker(
