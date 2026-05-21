@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     AWS_REGION: str = "ap-northeast-2"
     S3_BUCKET_NAME: str
     S3_PRESIGNED_URL_EXPIRE: int = 3600
+    CDN_BASE_URL: str = ""  # e.g. "xxxx.cloudfront.net" — 비어 있으면 S3 직접 URL 사용
     SNS_TOPIC_ARN: str = ""
 
     # ── AI ────────────────────────────────────────────────
@@ -108,6 +109,7 @@ AWS_ACCESS_KEY_ID = _s.AWS_ACCESS_KEY_ID
 AWS_SECRET_ACCESS_KEY = _s.AWS_SECRET_ACCESS_KEY
 AWS_REGION = _s.AWS_REGION
 S3_BUCKET_NAME = _s.S3_BUCKET_NAME
+CDN_BASE_URL = _s.CDN_BASE_URL
 
 DATABASE_URL = _s.DATABASE_URL
 SNS_TOPIC_ARN = _s.SNS_TOPIC_ARN

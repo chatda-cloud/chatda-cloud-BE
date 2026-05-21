@@ -28,6 +28,6 @@ class TagsResponse(BaseModel):
     category: str | None = Field(None, description="AI가 분류한 카테고리")
     features: list[str] = Field(..., alias="features", description="색상·형태·특이사항 등 특징 키워드 목록")
     has_vector: bool = Field(..., alias="hasVector", description="CLIP 벡터 임베딩 완료 여부")
-    image_url: str | None = Field(None, alias="imageUrl", description="S3 이미지 URL")
+    image_url: str | None = Field(None, alias="imageUrl", description="이미지 URL (CDN 경유)")
 
     model_config = {"populate_by_name": True}
