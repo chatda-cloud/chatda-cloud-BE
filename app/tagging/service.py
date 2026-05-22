@@ -8,7 +8,7 @@ from PIL import Image as PILImage
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME
+from app.config import AWS_ACCESS_KEY_ID, AWS_REGION, AWS_SECRET_ACCESS_KEY, CDN_BASE_URL, S3_BUCKET_NAME
 from app.models import FoundItem, Item, ItemStatus, LostItem
 from app.tagging import clip, gemini, rekognition
 from app.tagging.schema import TagsResponse
@@ -19,6 +19,8 @@ PENDING_CATEGORY = "분류중"
 
 
 def _build_image_url(s3_key: str) -> str:
+    if CDN_BASE_URL:
+        return f"https://{CDN_BASE_URL}/{s3_key}"
     return f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
 
 
