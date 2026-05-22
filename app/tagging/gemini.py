@@ -75,12 +75,11 @@ def extract_from_text(item_name: str, raw_text: str = "") -> dict:
         item_name=item_name,
         raw_text=raw_text or "없음",
     )
-    from app.config import get_settings
-    with genai.Client(api_key=get_settings().GEMINI_API_KEY) as client:
-        response = client.models.generate_content(
-            model=_MODEL,
-            contents=prompt,
-        )
+    client = _get_client()
+    response = client.models.generate_content(
+        model=_MODEL,
+        contents=prompt,
+    )
     return _parse(response.text)
 
 
@@ -91,13 +90,12 @@ def extract_from_image(
     mime_type: str = "image/jpeg",
 ) -> dict:
     prompt = _build_image_prompt(rekognition_labels, user_text)
-    from app.config import get_settings
-    with genai.Client(api_key=get_settings().GEMINI_API_KEY) as client:
-        response = client.models.generate_content(
-            model=_MODEL,
-            contents=[
-                types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                prompt,
-            ],
-        )
+    client = _get_client()
+    response = client.models.generate_content(
+        model=_MODEL,
+        contents=[
+            types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+            prompt,
+        ],
+    )
     return _parse(response.text)

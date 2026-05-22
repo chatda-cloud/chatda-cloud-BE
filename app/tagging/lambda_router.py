@@ -6,12 +6,11 @@ from app.tagging.schema import PresignedUrlRequest, PresignedUrlResponse
 router = APIRouter()
 
 _FLOW = """
-**이미지 업로드 4단계 플로우:**
+**이미지 업로드 3단계 플로우:**
 
 1. **`POST /presigned-url`** (이 엔드포인트, Lambda) — 서명 URL + s3Key 수령
 2. `PUT {presignedUrl}` (S3 직접) — 이미지 바이너리 업로드. Content-Type은 발급 시 지정한 값과 일치해야 함
-3. `POST /api/items/{itemId}/process-tags` (ECS) — s3Key 전달, 백그라운드 AI 태깅 시작
-4. `GET /api/items/{itemId}/tags` (ECS) — 태깅 결과 조회
+3. `POST /api/items/lost` 또는 `POST /api/items/found` (ECS) — s3Key 포함해서 아이템 등록, 백그라운드 AI 태깅 자동 시작
 
 > ⚠️ 이 엔드포인트는 **AWS Lambda**에서 실행됩니다. FastAPI 서버가 아닌 Lambda 함수 URL 또는 API Gateway를 통해 호출하세요.
 """

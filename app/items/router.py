@@ -77,7 +77,8 @@ async def create_lost_item_route(
         raw_text=raw_text,
     )
     data = await create_lost_item(db, current_user.id, body)
-    background_tasks.add_task(_bg_run_tagging_and_matching, data.item_id, s3_key, True)
+    if s3_key:
+        background_tasks.add_task(_bg_run_tagging_and_matching, data.item_id, s3_key, True)
     return {"success": True, "code": 201, "message": "분실물이 등록되었습니다.", "data": data.model_dump()}
 
 
@@ -100,7 +101,8 @@ async def create_found_item_route(
         raw_text=raw_text,
     )
     data = await create_found_item(db, current_user.id, body)
-    background_tasks.add_task(_bg_run_tagging_and_matching, data.item_id, s3_key, False)
+    if s3_key:
+        background_tasks.add_task(_bg_run_tagging_and_matching, data.item_id, s3_key, False)
     return {"success": True, "code": 201, "message": "습득물이 등록되었습니다.", "data": data.model_dump()}
 
 
