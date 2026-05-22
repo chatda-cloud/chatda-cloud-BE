@@ -10,7 +10,7 @@ class PresignedUrlRequest(BaseModel):
 
 class PresignedUrlResponse(BaseModel):
     presigned_url: str = Field(..., alias="presignedUrl", description="PUT 요청에 사용할 서명된 S3 URL (5분간 유효)")
-    s3_key: str = Field(..., alias="s3Key", description="S3 객체 키 — process-tags 호출 시 그대로 전달")
+    s3_key: str = Field(..., alias="s3Key", description="S3 객체 키 — POST /api/items/lost|found 등록 시 s3Key 필드로 전달")
     expires_in: int = Field(300, alias="expiresIn", description="URL 유효 시간 (초)")
 
     model_config = {"populate_by_name": True}

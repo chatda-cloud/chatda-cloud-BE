@@ -15,7 +15,7 @@ router = APIRouter()
     response_model=TagsResponse,
     response_model_by_alias=True,
     summary="AI 태깅 결과 조회",
-    description="해당 아이템의 AI 태깅 결과를 반환합니다. `process-tags` 호출 후 파이프라인이 완료되어야 값이 채워집니다.",
+    description="해당 아이템의 AI 태깅 결과를 반환합니다. 아이템 등록(POST /api/items/lost|found) 시 s3Key를 함께 전달하면 백그라운드 태깅 파이프라인이 자동 실행되며, 완료 후 값이 채워집니다.",
     response_description="카테고리, 특징 키워드, 벡터 임베딩 완료 여부, 이미지 URL",
 )
 async def get_tags(
