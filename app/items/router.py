@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import AsyncSessionLocal, get_db
 from app.dependencies import get_current_user
+from app.tagging.service import _build_image_url
 from app.items.schema import FoundItemUpdate, LostItemCreate, LostItemUpdate, FoundItemCreate
 from app.items.service import (
     create_found_item,
@@ -57,7 +58,12 @@ async def _bg_run_tagging_and_matching(item_id: int, s3_key: str | None, is_lost
 
 
 # ── 분실물 등록 ───────────────────────────────────────────
-@router.post("/lost", status_code=201)
+@router.post(
+    "/lost",
+    status_code=201,
+    summary="분실물 등록",
+    description="""분실물을 등록합니다. `s3Key`를 함께 전달하면 응답에 CDN `imageUrl`이 즉시 포함되고, 백그라운드에서 AI 태깅(Rekognition → CLIP → Gemini)이 자동 실행됩니다.\n\n**이미지 업로드 플로우:**\n1. `POST /presigned-url` (Lambda) — s3Key + presignedUrl 발급\n2. `PUT {presignedUrl}` (S3 직접) — 이미지 업로드\n3. 이 엔드포인트에 s3Key 포함해서 호출""",
+)
 async def create_lost_item_route(
     background_tasks: BackgroundTasks,
     item_name: str = Form(...),
@@ -78,12 +84,18 @@ async def create_lost_item_route(
     )
     data = await create_lost_item(db, current_user.id, body)
     if s3_key:
+        data.image_url = _build_image_url(s3_key)
         background_tasks.add_task(_bg_run_tagging_and_matching, data.item_id, s3_key, True)
     return {"success": True, "code": 201, "message": "분실물이 등록되었습니다.", "data": data.model_dump()}
 
 
 # ── 습득물 등록 ───────────────────────────────────────────
-@router.post("/found", status_code=201)
+@router.post(
+    "/found",
+    status_code=201,
+    summary="습득물 등록",
+    description="""습득물을 등록합니다. `s3Key`를 함께 전달하면 응답에 CDN `imageUrl`이 즉시 포함되고, 백그라운드에서 AI 태깅(Rekognition → CLIP → Gemini)이 자동 실행됩니다.\n\n**이미지 업로드 플로우:**\n1. `POST /presigned-url` (Lambda) — s3Key + presignedUrl 발급\n2. `PUT {presignedUrl}` (S3 직접) — 이미지 업로드\n3. 이 엔드포인트에 s3Key 포함해서 호출""",
+)
 async def create_found_item_route(
     background_tasks: BackgroundTasks,
     item_name: str = Form(...),
@@ -102,6 +114,7 @@ async def create_found_item_route(
     )
     data = await create_found_item(db, current_user.id, body)
     if s3_key:
+        data.image_url = _build_image_url(s3_key)
         background_tasks.add_task(_bg_run_tagging_and_matching, data.item_id, s3_key, False)
     return {"success": True, "code": 201, "message": "습득물이 등록되었습니다.", "data": data.model_dump()}
 
