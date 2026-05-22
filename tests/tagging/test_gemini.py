@@ -110,7 +110,7 @@ class TestExtractFromImage:
     def _patch_client(self, response):
         patcher = patch("app.tagging.gemini.genai.Client")
         MockClient = patcher.start()
-        mock_instance = MockClient.return_value.__enter__.return_value
+        mock_instance = MockClient.return_value
         mock_instance.models.generate_content.return_value = response
         return patcher, mock_instance
 
@@ -166,7 +166,7 @@ class TestExtractFromText:
     def test_returns_parsed_dict(self):
         expected = {"category": "지갑", "color": ["갈색"], "features": ["카드 슬롯"]}
         with patch("app.tagging.gemini.genai.Client") as MockClient:
-            mock_instance = MockClient.return_value.__enter__.return_value
+            mock_instance = MockClient.return_value
             mock_instance.models.generate_content.return_value = self._mock_response(expected)
             result = gemini.extract_from_text("갈색 지갑", "분실했어요")
         assert result["category"] == "지갑"

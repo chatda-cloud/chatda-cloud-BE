@@ -85,7 +85,8 @@ GEMINI_RESULT = {
 class TestBuildImageUrl:
     def test_format(self):
         with patch("app.tagging.service.S3_BUCKET_NAME", "my-bucket"), \
-             patch("app.tagging.service.AWS_REGION", "ap-northeast-2"):
+             patch("app.tagging.service.AWS_REGION", "ap-northeast-2"), \
+             patch("app.tagging.service.CDN_BASE_URL", ""):
             url = _build_image_url("items/1/photo.jpg")
         assert url == "https://my-bucket.s3.ap-northeast-2.amazonaws.com/items/1/photo.jpg"
 
