@@ -11,6 +11,7 @@ users 라우터
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import CDN_BASE_URL, S3_BUCKET_NAME, AWS_REGION
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models import User
@@ -71,7 +72,12 @@ async def patch_profile_image(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    user = await update_profile_image(db, current_user, body.profile_image_url)
+    image_url = body.profile_image_url
+    if CDN_BASE_URL:
+        s3_prefix = f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/"
+        if image_url.startswith(s3_prefix):
+            image_url = image_url.replace(s3_prefix, f"https://{CDN_BASE_URL}/", 1)
+    user = await update_profile_image(db, current_user, image_url)
     return {
         "success": True,
         "code": 200,
