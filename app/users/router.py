@@ -31,7 +31,7 @@ from app.users.service import (
     update_username,
 )
 
-router = APIRouter(tags=["users"])
+router = APIRouter()
 
 
 # ── 내 정보 조회 ──────────────────────────────────────────

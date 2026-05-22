@@ -2,7 +2,6 @@ from pydantic import BaseModel, Field
 
 
 class PresignedUrlRequest(BaseModel):
-    item_id: int = Field(..., alias="itemId", description="아이템 ID")
     filename: str = Field(..., description="업로드할 파일명 (예: jacket.jpg)")
     content_type: str = Field("image/jpeg", alias="contentType", description="MIME 타입")
 
@@ -11,16 +10,11 @@ class PresignedUrlRequest(BaseModel):
 
 class PresignedUrlResponse(BaseModel):
     presigned_url: str = Field(..., alias="presignedUrl", description="PUT 요청에 사용할 서명된 S3 URL (5분간 유효)")
-    s3_key: str = Field(..., alias="s3Key", description="S3 객체 키 — process-tags 호출 시 그대로 전달")
+    s3_key: str = Field(..., alias="s3Key", description="S3 객체 키 — POST /api/items/lost|found 등록 시 s3Key 필드로 전달")
     expires_in: int = Field(300, alias="expiresIn", description="URL 유효 시간 (초)")
 
     model_config = {"populate_by_name": True}
 
-
-class ProcessTagsRequest(BaseModel):
-    s3_key: str = Field(..., alias="s3Key", description="Step 1(presigned-url)에서 수령한 S3 객체 키")
-
-    model_config = {"populate_by_name": True}
 
 
 class TagsResponse(BaseModel):

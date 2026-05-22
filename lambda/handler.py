@@ -22,7 +22,6 @@ s3 = boto3.client(
 def lambda_handler(event, context):
     try:
         body = json.loads(event.get("body", "{}"))
-        item_id = body["itemId"]
         filename = body["filename"]
         content_type = body.get("contentType", "image/jpeg")
     except (KeyError, json.JSONDecodeError) as e:
@@ -31,7 +30,7 @@ def lambda_handler(event, context):
             "body": json.dumps({"message": f"잘못된 요청: {e}"}),
         }
 
-    s3_key = f"items/{item_id}/{uuid.uuid4()}_{filename}"
+    s3_key = f"items/{uuid.uuid4()}_{filename}"
 
     presigned_url = s3.generate_presigned_url(
         "put_object",
