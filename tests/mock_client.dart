@@ -2,17 +2,17 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-// ── 설정 ──────────────────────────────────────────────────────
+// -- 설정 ------------------------------------------------------
 // 로컬 테스트: 'http://127.0.0.1:8000'
 // ECS 배포 후: ALB DNS 주소
 const String baseUrl = 'http://127.0.0.1:8000';
 
-/// AWS Lambda API Gateway — presigned URL 발급 엔드포인트
+/// AWS Lambda API Gateway -- presigned URL 발급 엔드포인트
 /// stage 이름은 AWS 콘솔 API Gateway → chatda-api → 스테이지 탭에서 확인
 const String lambdaUrl =
     'https://eikuvtkwdd.execute-api.ap-northeast-2.amazonaws.com/prod/presigned-url';
 
-// ── 전역 상태 ──────────────────────────────────────────────────
+// -- 전역 상태 --------------------------------------------------
 String? _accessToken;
 int? _lostItemId;
 int? _foundItemId;
@@ -33,7 +33,7 @@ String _ts() {
 void _log(String msg) => print('${_ts()} $msg');
 
 void _logSection(String title) {
-  final bar = '─' * 55;
+  final bar = '-' * 55;
   print('\n${_ts()} $bar');
   print('${_ts()} ▶ $title');
   print('${_ts()} $bar');
@@ -287,7 +287,7 @@ Future<String?> _uploadImageViaLambda(
   final fileSizeKb = (await file.length()) ~/ 1024;
   _log('  📁 이미지 파일: $filename  ($fileSizeKb KB, $contentType)');
 
-  // ── A. Lambda → presigned URL 발급 ───────────────────────
+// -- A. Lambda -> presigned URL 발급 -----------------------
   _logSection('STEP A · Lambda presigned URL 발급');
   _log('  Lambda URL: $lambdaUrl');
   _log('  요청: itemId=$provisionalItemId  filename=$filename  contentType=$contentType');
@@ -318,7 +318,7 @@ Future<String?> _uploadImageViaLambda(
   _log('    s3Key     : $s3Key');
   _log('    expiresIn : ${expiresIn}s');
 
-  // ── B. S3 직접 PUT 업로드 ────────────────────────────────
+// -- B. S3 직접 PUT 업로드 --------------------------------
   _logSection('STEP B · S3 직접 PUT 업로드');
   final imageBytes = await file.readAsBytes();
   final s3Status = await _s3PutUpload(presignedUrl, imageBytes, contentType);
@@ -379,7 +379,7 @@ Future<void> _pollTagsUntilDone(int itemId, {int maxWaitSec = 90}) async {
   _log('     서버 로그에서 "태깅 완료" 또는 "태깅 실패" 메시지를 확인하세요');
 }
 
-// ── 공통 헬퍼 ─────────────────────────────────────────────────
+// -- 공통 헬퍼 -------------------------------------------------
 void _printStep(String title) {
   print('\n${'═' * 60}');
   print('  $title');

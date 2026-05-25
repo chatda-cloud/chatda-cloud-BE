@@ -10,7 +10,7 @@ items 라우터
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Form
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import AsyncSessionLocal, get_db
@@ -22,6 +22,8 @@ from app.items.service import (
     create_lost_item,
     delete_found_item,
     delete_lost_item,
+    list_found_items,
+    list_lost_items,
     read_found_item,
     read_lost_item,
     update_found_item,
@@ -117,6 +119,25 @@ async def create_found_item_route(
         data.image_url = _build_image_url(s3_key)
         background_tasks.add_task(_bg_run_tagging_and_matching, data.item_id, s3_key, False)
     return {"success": True, "code": 201, "message": "습득물이 등록되었습니다.", "data": data.model_dump()}
+
+
+# ── 전체 목록 조회 ────────────────────────────────────────
+@router.get("/lost")
+async def list_lost_items_route(
+    sort: str = Query("latest", enum=["latest", "oldest", "name"]),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await list_lost_items(db, sort)
+    return {"success": True, "code": 200, "message": "분실물 목록 조회 성공", "data": [d.model_dump() for d in data]}
+
+
+@router.get("/found")
+async def list_found_items_route(
+    sort: str = Query("latest", enum=["latest", "oldest", "name"]),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await list_found_items(db, sort)
+    return {"success": True, "code": 200, "message": "습득물 목록 조회 성공", "data": [d.model_dump() for d in data]}
 
 
 # ── 단건 조회 ─────────────────────────────────────────────

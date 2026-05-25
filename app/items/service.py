@@ -157,6 +157,32 @@ async def read_found_item(db: AsyncSession, item_id: int) -> FoundItemResponse:
     return found_item_to_response(await get_found_item_or_404(db, item_id))
 
 
+def _lost_order(sort: str):
+    if sort == "oldest": return LostItem.item_id.asc()
+    if sort == "name":   return LostItem.item_name.asc()
+    return LostItem.item_id.desc()
+
+
+def _found_order(sort: str):
+    if sort == "oldest": return FoundItem.item_id.asc()
+    if sort == "name":   return FoundItem.item_name.asc()
+    return FoundItem.item_id.desc()
+
+
+async def list_lost_items(db: AsyncSession, sort: str = "latest") -> list[LostItemResponse]:
+    result = await db.execute(
+        select(LostItem).options(joinedload(LostItem.item)).order_by(_lost_order(sort))
+    )
+    return [lost_item_to_response(li) for li in result.scalars().all()]
+
+
+async def list_found_items(db: AsyncSession, sort: str = "latest") -> list[FoundItemResponse]:
+    result = await db.execute(
+        select(FoundItem).options(joinedload(FoundItem.item)).order_by(_found_order(sort))
+    )
+    return [found_item_to_response(fi) for fi in result.scalars().all()]
+
+
 # ── 수정 ───────────────────────────────────────────────────
 async def update_lost_item(
     db: AsyncSession, item_id: int, user_id: int, body: LostItemUpdate
