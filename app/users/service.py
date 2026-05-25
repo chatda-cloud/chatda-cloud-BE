@@ -47,6 +47,10 @@ async def get_my_matches(db: AsyncSession, user_id: int) -> list[Match]:
     result = await db.execute(
         select(Match)
         .join(Item, (Item.id == Match.lost_item_id) | (Item.id == Match.found_item_id))
+        .options(
+            joinedload(Match.lost_item).joinedload(Item.lost_item),
+            joinedload(Match.found_item).joinedload(Item.found_item),
+        )
         .where(Item.user_id == user_id)
         .order_by(Match.created_at.desc())
         .distinct()

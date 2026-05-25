@@ -59,6 +59,16 @@ class FoundItemSummary(BaseModel):
 
 
 # ── 매칭 요약 ──────────────────────────────────────────────
+class MatchedItemInfo(BaseModel):
+    item_id: int
+    item_name: str
+    category: str
+    image_url: Optional[str]
+    location: str
+
+    model_config = {"from_attributes": True}
+
+
 class MatchSummary(BaseModel):
     id: int
     lost_item_id: int
@@ -66,5 +76,7 @@ class MatchSummary(BaseModel):
     similarity_score: float
     is_confirmed: bool
     created_at: datetime
+    lost_item: Optional[MatchedItemInfo] = None
+    found_item: Optional[MatchedItemInfo] = None
 
     model_config = {"from_attributes": True}

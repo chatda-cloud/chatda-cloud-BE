@@ -18,6 +18,7 @@ from app.models import User
 from app.users.schema import (
     FoundItemSummary,
     LostItemSummary,
+    MatchedItemInfo,
     MatchSummary,
     UpdateProfileImageRequest,
     UpdateUsernameRequest,
@@ -142,5 +143,36 @@ async def get_my_matches_route(
     db: AsyncSession = Depends(get_db),
 ):
     matches = await get_my_matches(db, current_user.id)
-    data = [MatchSummary.model_validate(m).model_dump() for m in matches]
+    data = []
+    for m in matches:
+        lost_info = None
+        found_info = None
+        if m.lost_item and m.lost_item.lost_item:
+            li = m.lost_item.lost_item
+            lost_info = MatchedItemInfo(
+                item_id=li.item_id,
+                item_name=li.item_name,
+                category=m.lost_item.category,
+                image_url=li.image_url,
+                location=li.location,
+            )
+        if m.found_item and m.found_item.found_item:
+            fi = m.found_item.found_item
+            found_info = MatchedItemInfo(
+                item_id=fi.item_id,
+                item_name=fi.item_name,
+                category=m.found_item.category,
+                image_url=fi.image_url,
+                location=fi.location,
+            )
+        data.append(MatchSummary(
+            id=m.id,
+            lost_item_id=m.lost_item_id,
+            found_item_id=m.found_item_id,
+            similarity_score=m.similarity_score,
+            is_confirmed=m.is_confirmed,
+            created_at=m.created_at,
+            lost_item=lost_info,
+            found_item=found_info,
+        ).model_dump())
     return {"success": True, "code": 200, "message": "매칭 리스트 조회 성공", "data": data}
