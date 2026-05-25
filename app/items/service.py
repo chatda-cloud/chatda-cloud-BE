@@ -2,7 +2,7 @@
 import logging
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, or_, cast, Text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -169,17 +169,45 @@ def _found_order(sort: str):
     return FoundItem.item_id.desc()
 
 
-async def list_lost_items(db: AsyncSession, sort: str = "latest") -> list[LostItemResponse]:
-    result = await db.execute(
-        select(LostItem).options(joinedload(LostItem.item)).order_by(_lost_order(sort))
-    )
+async def list_lost_items(
+    db: AsyncSession,
+    sort: str = "latest",
+    category: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+) -> list[LostItemResponse]:
+    stmt = select(LostItem).options(joinedload(LostItem.item)).join(LostItem.item)
+    if category:
+        stmt = stmt.where(Item.category == category)
+    if status:
+        stmt = stmt.where(Item.status == status)
+    if q:
+        stmt = stmt.where(or_(
+            LostItem.item_name.ilike(f"%{q}%"),
+            cast(LostItem.features, Text).ilike(f"%{q}%"),
+        ))
+    result = await db.execute(stmt.order_by(_lost_order(sort)))
     return [lost_item_to_response(li) for li in result.scalars().all()]
 
 
-async def list_found_items(db: AsyncSession, sort: str = "latest") -> list[FoundItemResponse]:
-    result = await db.execute(
-        select(FoundItem).options(joinedload(FoundItem.item)).order_by(_found_order(sort))
-    )
+async def list_found_items(
+    db: AsyncSession,
+    sort: str = "latest",
+    category: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+) -> list[FoundItemResponse]:
+    stmt = select(FoundItem).options(joinedload(FoundItem.item)).join(FoundItem.item)
+    if category:
+        stmt = stmt.where(Item.category == category)
+    if status:
+        stmt = stmt.where(Item.status == status)
+    if q:
+        stmt = stmt.where(or_(
+            FoundItem.item_name.ilike(f"%{q}%"),
+            cast(FoundItem.features, Text).ilike(f"%{q}%"),
+        ))
+    result = await db.execute(stmt.order_by(_found_order(sort)))
     return [found_item_to_response(fi) for fi in result.scalars().all()]
 
 

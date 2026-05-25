@@ -125,18 +125,24 @@ async def create_found_item_route(
 @router.get("/lost")
 async def list_lost_items_route(
     sort: str = Query("latest", enum=["latest", "oldest", "name"]),
+    category: str | None = Query(None),
+    status: str | None = Query(None, enum=["LOST", "FOUND", "MATCHED"]),
+    q: str | None = Query(None, description="이름 또는 특징 검색"),
     db: AsyncSession = Depends(get_db),
 ):
-    data = await list_lost_items(db, sort)
+    data = await list_lost_items(db, sort, category, status, q)
     return {"success": True, "code": 200, "message": "분실물 목록 조회 성공", "data": [d.model_dump() for d in data]}
 
 
 @router.get("/found")
 async def list_found_items_route(
     sort: str = Query("latest", enum=["latest", "oldest", "name"]),
+    category: str | None = Query(None),
+    status: str | None = Query(None, enum=["LOST", "FOUND", "MATCHED"]),
+    q: str | None = Query(None, description="이름 또는 특징 검색"),
     db: AsyncSession = Depends(get_db),
 ):
-    data = await list_found_items(db, sort)
+    data = await list_found_items(db, sort, category, status, q)
     return {"success": True, "code": 200, "message": "습득물 목록 조회 성공", "data": [d.model_dump() for d in data]}
 
 
