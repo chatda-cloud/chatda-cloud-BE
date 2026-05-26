@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # ── 앱 ────────────────────────────────────────────────
     ENV: Literal["development", "staging", "production"] = "development"
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:8080"]
+    CORS_ORIGINS: list[str] = ["https://chatda-cloud-fe.vercel.app", "http://localhost:3000", "http://localhost:8080"]
 
     # ── 데이터베이스 ──────────────────────────────────────
     DATABASE_URL: str
