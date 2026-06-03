@@ -1,6 +1,8 @@
-"""items 비즈니스 로직 (DB 조작, 권한, 응답 매핑)."""
+"""items 비즈니스 로직 - DB 저장만 수행. 태깅·매칭은 router에서 BackgroundTasks로 처리."""
+import logging
+
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, or_, cast, Text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -8,23 +10,29 @@ from app.items.schema import (
     FoundItemCreate,
     FoundItemResponse,
     FoundItemUpdate,
+    ItemRegisterResponse,
     ItemResponse,
     LostItemCreate,
     LostItemResponse,
     LostItemUpdate,
 )
 from app.models import FoundItem, Item, ItemStatus, LostItem
+from app.tagging.service import PENDING_CATEGORY
+
+logger = logging.getLogger(__name__)
 
 
+# ── 응답 변환 헬퍼 ─────────────────────────────────────────
 def lost_item_to_response(lost_item: LostItem) -> LostItemResponse:
     return LostItemResponse(
         item_id=lost_item.item_id,
+        item_name=lost_item.item_name,
         date_start=lost_item.date_start,
         date_end=lost_item.date_end,
         location=lost_item.location,
         raw_text=lost_item.raw_text,
         image_url=lost_item.image_url,
-        ai_tags=lost_item.ai_tags,
+        features=lost_item.features,
         item=ItemResponse.model_validate(lost_item.item),
     )
 
@@ -32,157 +40,221 @@ def lost_item_to_response(lost_item: LostItem) -> LostItemResponse:
 def found_item_to_response(found_item: FoundItem) -> FoundItemResponse:
     return FoundItemResponse(
         item_id=found_item.item_id,
+        item_name=found_item.item_name,
         found_date=found_item.found_date,
         location=found_item.location,
         raw_text=found_item.raw_text,
         image_url=found_item.image_url,
-        ai_tags=found_item.ai_tags,
+        features=found_item.features,
         item=ItemResponse.model_validate(found_item.item),
     )
 
 
+# ── 조회 헬퍼 (없으면 404) ─────────────────────────────────
 async def get_lost_item_or_404(db: AsyncSession, item_id: int) -> LostItem:
     result = await db.execute(
-        select(LostItem).options(joinedload(LostItem.item)).where(LostItem.item_id == item_id)
+        select(LostItem)
+        .options(joinedload(LostItem.item))
+        .where(LostItem.item_id == item_id)
     )
     lost_item = result.scalars().first()
     if lost_item is None:
-        raise HTTPException(
-            status_code=404,
-            detail={"success": False, "code": 404, "message": "분실물을 찾을 수 없습니다.", "data": None},
-        )
+        raise HTTPException(status_code=404, detail={
+            "success": False, "code": 404, "message": "분실물을 찾을 수 없습니다.", "data": None,
+        })
     return lost_item
 
 
 async def get_found_item_or_404(db: AsyncSession, item_id: int) -> FoundItem:
     result = await db.execute(
-        select(FoundItem).options(joinedload(FoundItem.item)).where(FoundItem.item_id == item_id)
+        select(FoundItem)
+        .options(joinedload(FoundItem.item))
+        .where(FoundItem.item_id == item_id)
     )
     found_item = result.scalars().first()
     if found_item is None:
-        raise HTTPException(
-            status_code=404,
-            detail={"success": False, "code": 404, "message": "습득물을 찾을 수 없습니다.", "data": None},
-        )
+        raise HTTPException(status_code=404, detail={
+            "success": False, "code": 404, "message": "습득물을 찾을 수 없습니다.", "data": None,
+        })
     return found_item
 
 
-async def create_lost_item(db: AsyncSession, user_id: int, body: LostItemCreate) -> LostItemResponse:
-    item = Item(user_id=user_id, category=body.category, status=ItemStatus.LOST)
+# ── 소유자 검증 ───────────────────────────────────────────
+def check_owner(item_user_id: int, current_user_id: int) -> None:
+    if item_user_id != current_user_id:
+        raise HTTPException(status_code=403, detail={
+            "success": False, "code": 403, "message": "권한이 없습니다.", "data": None,
+        })
+
+
+# ── 분실물 등록 (DB 저장만, 태깅·매칭은 router에서 BackgroundTasks로) ──
+async def create_lost_item(
+    db: AsyncSession,
+    user_id: int,
+    body: LostItemCreate,
+) -> ItemRegisterResponse:
+    item = Item(user_id=user_id, category=PENDING_CATEGORY, status=ItemStatus.LOST)
     db.add(item)
     await db.flush()
 
     lost_item = LostItem(
         item_id=item.id,
+        item_name=body.item_name,
         date_start=body.date_start,
         date_end=body.date_end,
         location=body.location,
         raw_text=body.raw_text,
     )
     db.add(lost_item)
-    await db.commit()
+    await db.flush()
 
-    created = await get_lost_item_or_404(db, item.id)
-    return lost_item_to_response(created)
+    return ItemRegisterResponse(
+        item_id=item.id,
+        item_name=body.item_name,
+        category=PENDING_CATEGORY,
+        features=[],
+        image_url=None,
+        matched_count=0,
+    )
 
 
-async def create_found_item(db: AsyncSession, user_id: int, body: FoundItemCreate) -> FoundItemResponse:
-    item = Item(user_id=user_id, category=body.category, status=ItemStatus.FOUND)
+# ── 습득물 등록 (DB 저장만, 태깅·매칭은 router에서 BackgroundTasks로) ──
+async def create_found_item(
+    db: AsyncSession,
+    user_id: int,
+    body: FoundItemCreate,
+) -> ItemRegisterResponse:
+    item = Item(user_id=user_id, category=PENDING_CATEGORY, status=ItemStatus.FOUND)
     db.add(item)
     await db.flush()
 
     found_item = FoundItem(
         item_id=item.id,
+        item_name=body.item_name,
         found_date=body.found_date,
         location=body.location,
         raw_text=body.raw_text,
     )
     db.add(found_item)
-    await db.commit()
+    await db.flush()
 
-    created = await get_found_item_or_404(db, item.id)
-    return found_item_to_response(created)
+    return ItemRegisterResponse(
+        item_id=item.id,
+        item_name=body.item_name,
+        category=PENDING_CATEGORY,
+        features=[],
+        image_url=None,
+        matched_count=0,
+    )
 
 
+# ── 조회 ───────────────────────────────────────────────────
 async def read_lost_item(db: AsyncSession, item_id: int) -> LostItemResponse:
-    lost_item = await get_lost_item_or_404(db, item_id)
-    return lost_item_to_response(lost_item)
+    return lost_item_to_response(await get_lost_item_or_404(db, item_id))
 
 
 async def read_found_item(db: AsyncSession, item_id: int) -> FoundItemResponse:
-    found_item = await get_found_item_or_404(db, item_id)
-    return found_item_to_response(found_item)
+    return found_item_to_response(await get_found_item_or_404(db, item_id))
 
 
+def _lost_order(sort: str):
+    if sort == "oldest": return LostItem.item_id.asc()
+    if sort == "name":   return LostItem.item_name.asc()
+    return LostItem.item_id.desc()
+
+
+def _found_order(sort: str):
+    if sort == "oldest": return FoundItem.item_id.asc()
+    if sort == "name":   return FoundItem.item_name.asc()
+    return FoundItem.item_id.desc()
+
+
+async def list_lost_items(
+    db: AsyncSession,
+    sort: str = "latest",
+    category: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+) -> list[LostItemResponse]:
+    stmt = select(LostItem).options(joinedload(LostItem.item)).join(LostItem.item)
+    if category:
+        stmt = stmt.where(Item.category == category)
+    if status:
+        stmt = stmt.where(Item.status == status)
+    if q:
+        stmt = stmt.where(or_(
+            LostItem.item_name.ilike(f"%{q}%"),
+            cast(LostItem.features, Text).ilike(f"%{q}%"),
+        ))
+    result = await db.execute(stmt.order_by(_lost_order(sort)))
+    return [lost_item_to_response(li) for li in result.scalars().all()]
+
+
+async def list_found_items(
+    db: AsyncSession,
+    sort: str = "latest",
+    category: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+) -> list[FoundItemResponse]:
+    stmt = select(FoundItem).options(joinedload(FoundItem.item)).join(FoundItem.item)
+    if category:
+        stmt = stmt.where(Item.category == category)
+    if status:
+        stmt = stmt.where(Item.status == status)
+    if q:
+        stmt = stmt.where(or_(
+            FoundItem.item_name.ilike(f"%{q}%"),
+            cast(FoundItem.features, Text).ilike(f"%{q}%"),
+        ))
+    result = await db.execute(stmt.order_by(_found_order(sort)))
+    return [found_item_to_response(fi) for fi in result.scalars().all()]
+
+
+# ── 수정 ───────────────────────────────────────────────────
 async def update_lost_item(
     db: AsyncSession, item_id: int, user_id: int, body: LostItemUpdate
 ) -> LostItemResponse:
     lost_item = await get_lost_item_or_404(db, item_id)
-    if lost_item.item.user_id != user_id:
-        raise HTTPException(
-            status_code=403,
-            detail={"success": False, "code": 403, "message": "수정 권한이 없습니다.", "data": None},
-        )
+    check_owner(lost_item.item.user_id, user_id)
 
-    if body.category is not None:
-        lost_item.item.category = body.category
-    if body.date_start is not None:
-        lost_item.date_start = body.date_start
-    if body.date_end is not None:
-        lost_item.date_end = body.date_end
-    if body.location is not None:
-        lost_item.location = body.location
-    if body.raw_text is not None:
-        lost_item.raw_text = body.raw_text
+    if body.item_name is not None: lost_item.item_name = body.item_name
+    if body.date_start is not None: lost_item.date_start = body.date_start
+    if body.date_end is not None: lost_item.date_end = body.date_end
+    if body.location is not None: lost_item.location = body.location
+    if body.raw_text is not None: lost_item.raw_text = body.raw_text
 
-    await db.commit()
-    updated = await get_lost_item_or_404(db, item_id)
-    return lost_item_to_response(updated)
-
-
-async def delete_lost_item(db: AsyncSession, item_id: int, user_id: int) -> None:
-    lost_item = await get_lost_item_or_404(db, item_id)
-    if lost_item.item.user_id != user_id:
-        raise HTTPException(
-            status_code=403,
-            detail={"success": False, "code": 403, "message": "삭제 권한이 없습니다.", "data": None},
-        )
-
-    await db.delete(lost_item.item)
-    await db.commit()
+    await db.flush()
+    await db.refresh(lost_item, ["item"])
+    return lost_item_to_response(lost_item)
 
 
 async def update_found_item(
     db: AsyncSession, item_id: int, user_id: int, body: FoundItemUpdate
 ) -> FoundItemResponse:
     found_item = await get_found_item_or_404(db, item_id)
-    if found_item.item.user_id != user_id:
-        raise HTTPException(
-            status_code=403,
-            detail={"success": False, "code": 403, "message": "수정 권한이 없습니다.", "data": None},
-        )
+    check_owner(found_item.item.user_id, user_id)
 
-    if body.category is not None:
-        found_item.item.category = body.category
-    if body.found_date is not None:
-        found_item.found_date = body.found_date
-    if body.location is not None:
-        found_item.location = body.location
-    if body.raw_text is not None:
-        found_item.raw_text = body.raw_text
+    if body.item_name is not None: found_item.item_name = body.item_name
+    if body.found_date is not None: found_item.found_date = body.found_date
+    if body.location is not None: found_item.location = body.location
+    if body.raw_text is not None: found_item.raw_text = body.raw_text
 
-    await db.commit()
-    updated = await get_found_item_or_404(db, item_id)
-    return found_item_to_response(updated)
+    await db.flush()
+    await db.refresh(found_item, ["item"])
+    return found_item_to_response(found_item)
+
+
+# ── 삭제 ───────────────────────────────────────────────────
+async def delete_lost_item(db: AsyncSession, item_id: int, user_id: int) -> None:
+    lost_item = await get_lost_item_or_404(db, item_id)
+    check_owner(lost_item.item.user_id, user_id)
+    await db.delete(lost_item.item)
+    await db.flush()
 
 
 async def delete_found_item(db: AsyncSession, item_id: int, user_id: int) -> None:
     found_item = await get_found_item_or_404(db, item_id)
-    if found_item.item.user_id != user_id:
-        raise HTTPException(
-            status_code=403,
-            detail={"success": False, "code": 403, "message": "삭제 권한이 없습니다.", "data": None},
-        )
-
+    check_owner(found_item.item.user_id, user_id)
     await db.delete(found_item.item)
-    await db.commit()
+    await db.flush()

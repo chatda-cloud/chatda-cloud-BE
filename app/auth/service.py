@@ -3,6 +3,8 @@ import asyncio
 import logging
 import secrets
 import smtplib
+
+import httpx
 from datetime import date, datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -17,6 +19,14 @@ from app.config import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     JWT_ALGORITHM,
     JWT_SECRET,
+    KAKAO_CLIENT_ID,
+    KAKAO_REDIRECT_URI,
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    GOOGLE_REDIRECT_URI,
+    NAVER_CLIENT_ID,
+    NAVER_CLIENT_SECRET,
+    NAVER_REDIRECT_URI,
     PW_RESET_BASE_URL,
     REFRESH_TOKEN_EXPIRE_DAYS,
     SMTP_HOST,
@@ -33,8 +43,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 PW_RESET_EXPIRE_MINUTES = 30
 
 
-# ── 비밀번호 ──────────────────────────────────────────────────────────────────
-
+# ── 비밀번호 ──────────────────────────────────────────────
 def hash_password(plain: str) -> str:
     return pwd_context.hash(plain)
 
@@ -43,8 +52,7 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
-# ── JWT ──────────────────────────────────────────────────────────────────────
-
+# ── JWT ───────────────────────────────────────────────────
 def create_access_token(user_id: int) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     return jwt.encode({"sub": str(user_id), "exp": expire}, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -52,7 +60,11 @@ def create_access_token(user_id: int) -> str:
 
 def create_refresh_token(user_id: int) -> str:
     expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    return jwt.encode({"sub": str(user_id), "exp": expire, "type": "refresh"}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode(
+        {"sub": str(user_id), "exp": expire, "type": "refresh"},
+        JWT_SECRET,
+        algorithm=JWT_ALGORITHM,
+    )
 
 
 def decode_refresh_token(token: str) -> int:
@@ -63,8 +75,7 @@ def decode_refresh_token(token: str) -> int:
     return int(payload["sub"])
 
 
-# ── DB 조작 ───────────────────────────────────────────────────────────────────
-
+# ── DB 조작 ───────────────────────────────────────────────
 async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
     result = await db.execute(select(User).where(User.email == email))
     return result.scalars().first()
@@ -84,60 +95,205 @@ async def create_user(
     birthDate: Optional[date],
 ) -> User:
     user = User(
+        user_id=email.split("@")[0],   # user_id는 이메일 앞부분으로 자동 설정 (필요시 변경)
+        password=hash_password(password),
         email=email,
-        hashed_password=hash_password(password),
         username=username,
         gender=gender,
         birthdate=birthDate,
     )
     db.add(user)
-    await db.commit()
+    await db.flush()
     await db.refresh(user)
     return user
 
 
 async def authenticate_user(db: AsyncSession, email: str, password: str) -> Optional[User]:
     user = await get_user_by_email(db, email)
-    if user is None or not user.hashed_password:
+    if user is None or not user.password:
         return None
-    if not verify_password(password, user.hashed_password):
+    if not verify_password(password, user.password):
         return None
     return user
 
 
 async def save_refresh_token(db: AsyncSession, user: User, token: str) -> None:
     user.refresh_token = token
-    await db.commit()
+    await db.flush()
 
 
 async def clear_refresh_token(db: AsyncSession, user: User) -> None:
     user.refresh_token = None
-    await db.commit()
+    await db.flush()
 
 
-# ── 소셜 로그인 ───────────────────────────────────────────────────────────────
-
-async def exchange_social_code(
-    db: AsyncSession, provider: str, code: str
-) -> User:
-    """
-    소셜 로그인 코드를 유저 정보로 교환한다.
-    실제 구현 시 provider별 OAuth API 호출 필요.
-    """
-    # TODO: provider별 실제 OAuth 코드 교환 구현
-    #   kakao  → https://kauth.kakao.com/oauth/token
-    #   google → https://oauth2.googleapis.com/token
-    #   apple  → https://appleid.apple.com/auth/token
+# ── 소셜 로그인 ───────────────────────────────────────────
+async def exchange_social_code(db: AsyncSession, provider: str, code: str) -> User:
+    if provider == "kakao":
+        return await _exchange_kakao(db, code)
+    if provider == "google":
+        return await _exchange_google(db, code)
+    if provider == "naver":
+        return await _exchange_naver(db, code)
     raise NotImplementedError(f"소셜 로그인 미구현: provider={provider}")
 
 
-# ── 비밀번호 재설정 ───────────────────────────────────────────────────────────
+async def _exchange_kakao(db: AsyncSession, code: str) -> User:
+    async with httpx.AsyncClient() as client:
+        # 1. 인가 코드 → 액세스 토큰
+        token_res = await client.post(
+            "https://kauth.kakao.com/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": KAKAO_CLIENT_ID,
+                "redirect_uri": KAKAO_REDIRECT_URI,
+                "code": code,
+            },
+        )
+        token_res.raise_for_status()
+        access_token = token_res.json()["access_token"]
 
+        # 2. 액세스 토큰 → 유저 정보
+        user_res = await client.get(
+            "https://kapi.kakao.com/v2/user/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        user_res.raise_for_status()
+        user_data = user_res.json()
+
+    kakao_id = str(user_data["id"])
+    profile = user_data.get("kakao_account", {}).get("profile", {})
+    nickname = profile.get("nickname") or f"user_{kakao_id[-6:]}"
+    profile_image = profile.get("profile_image_url")
+
+    # 3. 기존 유저 조회 → 없으면 자동 가입
+    result = await db.execute(
+        select(User).where(User.social_id == kakao_id, User.provider == "kakao")
+    )
+    user = result.scalars().first()
+
+    if user is None:
+        user = User(
+            user_id=f"kakao_{kakao_id}",
+            email=f"kakao_{kakao_id}@chatda.social",
+            password=None,
+            username=nickname,
+            social_id=kakao_id,
+            provider="kakao",
+            profile_image_url=profile_image,
+        )
+        db.add(user)
+        await db.flush()
+        await db.refresh(user)
+
+    return user
+
+
+async def _exchange_google(db: AsyncSession, code: str) -> User:
+    async with httpx.AsyncClient() as client:
+        token_res = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "redirect_uri": GOOGLE_REDIRECT_URI,
+                "code": code,
+            },
+        )
+        token_res.raise_for_status()
+        access_token = token_res.json()["access_token"]
+
+        user_res = await client.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        user_res.raise_for_status()
+        user_data = user_res.json()
+
+    google_id = str(user_data["id"])
+    email = user_data.get("email") or f"google_{google_id}@chatda.social"
+    name = user_data.get("name") or f"user_{google_id[-6:]}"
+    profile_image = user_data.get("picture")
+
+    result = await db.execute(
+        select(User).where(User.social_id == google_id, User.provider == "google")
+    )
+    user = result.scalars().first()
+
+    if user is None:
+        user = User(
+            user_id=f"google_{google_id}",
+            email=email,
+            password=None,
+            username=name,
+            social_id=google_id,
+            provider="google",
+            profile_image_url=profile_image,
+        )
+        db.add(user)
+        await db.flush()
+        await db.refresh(user)
+
+    return user
+
+
+async def _exchange_naver(db: AsyncSession, code: str) -> User:
+    async with httpx.AsyncClient() as client:
+        token_res = await client.post(
+            "https://nid.naver.com/oauth2.0/token",
+            params={
+                "grant_type": "authorization_code",
+                "client_id": NAVER_CLIENT_ID,
+                "client_secret": NAVER_CLIENT_SECRET,
+                "redirect_uri": NAVER_REDIRECT_URI,
+                "code": code,
+                "state": "chatda",
+            },
+        )
+        token_res.raise_for_status()
+        access_token = token_res.json()["access_token"]
+
+        user_res = await client.get(
+            "https://openapi.naver.com/v1/nid/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        user_res.raise_for_status()
+        user_data = user_res.json().get("response", {})
+
+    naver_id = str(user_data["id"])
+    email = user_data.get("email") or f"naver_{naver_id}@chatda.social"
+    name = user_data.get("name") or user_data.get("nickname") or f"user_{naver_id[-6:]}"
+    profile_image = user_data.get("profile_image")
+
+    result = await db.execute(
+        select(User).where(User.social_id == naver_id, User.provider == "naver")
+    )
+    user = result.scalars().first()
+
+    if user is None:
+        user = User(
+            user_id=f"naver_{naver_id}",
+            email=email,
+            password=None,
+            username=name,
+            social_id=naver_id,
+            provider="naver",
+            profile_image_url=profile_image,
+        )
+        db.add(user)
+        await db.flush()
+        await db.refresh(user)
+
+    return user
+
+
+# ── 비밀번호 재설정 ───────────────────────────────────────
 async def create_pw_reset_token(db: AsyncSession, user: User) -> str:
     token = secrets.token_urlsafe(32)
     user.pw_reset_token = token
     user.pw_reset_expires = datetime.now(timezone.utc) + timedelta(minutes=PW_RESET_EXPIRE_MINUTES)
-    await db.commit()
+    await db.flush()
     return token
 
 
@@ -173,7 +329,6 @@ def _build_reset_email(to: str, reset_link: str) -> MIMEMultipart:
 
 
 def _send_smtp(to: str, msg: MIMEMultipart) -> None:
-    """smtplib으로 STARTTLS 메일 발송 (blocking — to_thread로 호출)."""
     with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
         smtp.ehlo()
         smtp.starttls()
@@ -182,11 +337,9 @@ def _send_smtp(to: str, msg: MIMEMultipart) -> None:
 
 
 async def send_pw_reset_email(email: str, token: str) -> None:
-    """비밀번호 재설정 링크를 SMTP로 발송한다."""
     reset_link = f"{PW_RESET_BASE_URL}?token={token}"
 
     if not SMTP_USER or not SMTP_PASSWORD:
-        # SMTP 미설정 시 로그만 출력 (개발 환경)
         logger.warning("[PWReset] SMTP 미설정 — 이메일 발송 생략. 링크=%s", reset_link)
         return
 
@@ -200,10 +353,6 @@ async def send_pw_reset_email(email: str, token: str) -> None:
 
 
 async def reset_password(db: AsyncSession, token: str, new_password: str) -> Optional[User]:
-    """
-    토큰을 검증하고 비밀번호를 변경한다.
-    토큰 만료/불일치 시 None 반환.
-    """
     result = await db.execute(select(User).where(User.pw_reset_token == token))
     user = result.scalars().first()
 
@@ -212,14 +361,18 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Opt
 
     now = datetime.now(timezone.utc)
     expires = user.pw_reset_expires
-    if expires is None or (expires.tzinfo is None and expires.replace(tzinfo=timezone.utc) < now) or \
-       (expires.tzinfo is not None and expires < now):
+    if expires is None:
+        return None
+    # timezone 정보 없는 경우 UTC로 처리
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires < now:
         return None
 
-    user.hashed_password = hash_password(new_password)
+    user.password = hash_password(new_password)
     user.pw_reset_token = None
     user.pw_reset_expires = None
     user.refresh_token = None   # 기존 세션 무효화
-    await db.commit()
+    await db.flush()
     await db.refresh(user)
     return user

@@ -1,34 +1,125 @@
-"""환경변수 중앙 관리."""
-import os
-from dotenv import load_dotenv
+from functools import lru_cache
+from typing import Literal
 
-load_dotenv()
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# ── DB ───────────────────────────────────────────────────────────────────────
-DATABASE_URL: str = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://user:password@localhost:5432/chatda",
-)
 
-# ── JWT ────────────────────────────────────────────────────────────
-JWT_SECRET: str = os.getenv("JWT_SECRET", "change-me-in-production")
-JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
-REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
-PW_RESET_BASE_URL: str = os.getenv("PW_RESET_BASE_URL", "")
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        env_ignore_empty=True,
+    )
 
-# ── AWS ──────────────────────────────────────────────────────────────────────
-AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
-AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
-AWS_REGION: str = os.getenv("AWS_REGION", "ap-northeast-2")
-S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME", "")
+    # ── 앱 ────────────────────────────────────────────────
+    ENV: Literal["development", "staging", "production"] = "development"
+    CORS_ORIGINS: list[str] = ["https://chatda-cloud-fe-seven.vercel.app", "https://chatda-cloud-fe.vercel.app", "https://d1oksic5ube6bi.cloudfront.net", "http://localhost:3000", "http://localhost:8080"]
 
-# ── SMTP ─────────────────────────────────────────────────────────────────────
-SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER: str = os.getenv("SMTP_USER", "")
-SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
-SMTP_SENDER: str = os.getenv("SMTP_SENDER", SMTP_USER)
+    # ── 데이터베이스 ──────────────────────────────────────
+    DATABASE_URL: str
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 1800
 
-# ── AI ───────────────────────────────────────────────────────────────────────
-GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    # ── JWT ───────────────────────────────────────────────
+    SECRET_KEY: str
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    # ── AWS ───────────────────────────────────────────────
+    AWS_ACCESS_KEY_ID: str
+    AWS_SECRET_ACCESS_KEY: str
+    AWS_REGION: str = "ap-northeast-2"
+    S3_BUCKET_NAME: str
+    S3_PRESIGNED_URL_EXPIRE: int = 3600
+    CDN_BASE_URL: str = ""  # e.g. "xxxx.cloudfront.net" — 비어 있으면 S3 직접 URL 사용
+    SNS_TOPIC_ARN: str = ""
+
+    # ── AI ────────────────────────────────────────────────
+    GEMINI_API_KEY: str
+    CLIP_MODEL_NAME: str = "ViT-B/32"
+    MATCH_THRESHOLD: float = 0.7
+    VECTOR_WEIGHT: float = 0.8
+    TAG_WEIGHT: float = 0.2
+
+    # ── 소셜 로그인 ───────────────────────────────────────
+    KAKAO_CLIENT_ID: str = ""
+    KAKAO_REDIRECT_URI: str = ""
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = ""
+    NAVER_CLIENT_ID: str = ""
+    NAVER_CLIENT_SECRET: str = ""
+    NAVER_REDIRECT_URI: str = ""
+
+    # ── SMTP (비밀번호 재설정 이메일) ──────────────────────
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_SENDER: str = ""
+    PW_RESET_BASE_URL: str = "http://localhost:3000/reset-password"
+
+    # ── validators ────────────────────────────────────────
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def validate_db_url(cls, v: str) -> str:
+        if not v.startswith("postgresql+asyncpg://"):
+            raise ValueError(
+                "DATABASE_URL must use asyncpg driver: "
+                "postgresql+asyncpg://user:password@host:port/dbname"
+            )
+        return v
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors(cls, v):
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",")]
+        return v
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return Settings()
+
+
+# ── auth service에서 직접 임포트하는 변수들 ────────────────
+# service.py에서 get_settings() 대신 바로 쓸 수 있도록 제공
+_s = get_settings()
+
+JWT_SECRET = _s.SECRET_KEY
+JWT_ALGORITHM = _s.ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = _s.ACCESS_TOKEN_EXPIRE_MINUTES
+REFRESH_TOKEN_EXPIRE_DAYS = _s.REFRESH_TOKEN_EXPIRE_DAYS
+
+SMTP_HOST = _s.SMTP_HOST
+SMTP_PORT = _s.SMTP_PORT
+SMTP_USER = _s.SMTP_USER
+SMTP_PASSWORD = _s.SMTP_PASSWORD
+SMTP_SENDER = _s.SMTP_SENDER
+PW_RESET_BASE_URL = _s.PW_RESET_BASE_URL
+
+# ── tagging service에서 직접 임포트하는 변수들 ───────────────
+GEMINI_API_KEY = _s.GEMINI_API_KEY
+AWS_ACCESS_KEY_ID = _s.AWS_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY = _s.AWS_SECRET_ACCESS_KEY
+AWS_REGION = _s.AWS_REGION
+S3_BUCKET_NAME = _s.S3_BUCKET_NAME
+CDN_BASE_URL = _s.CDN_BASE_URL
+
+DATABASE_URL = _s.DATABASE_URL
+SNS_TOPIC_ARN = _s.SNS_TOPIC_ARN
+
+KAKAO_CLIENT_ID = _s.KAKAO_CLIENT_ID
+KAKAO_REDIRECT_URI = _s.KAKAO_REDIRECT_URI
+GOOGLE_CLIENT_ID = _s.GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET = _s.GOOGLE_CLIENT_SECRET
+GOOGLE_REDIRECT_URI = _s.GOOGLE_REDIRECT_URI
+NAVER_CLIENT_ID = _s.NAVER_CLIENT_ID
+NAVER_CLIENT_SECRET = _s.NAVER_CLIENT_SECRET
+NAVER_REDIRECT_URI = _s.NAVER_REDIRECT_URI
