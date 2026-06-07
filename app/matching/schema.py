@@ -22,9 +22,3 @@ class MatchListResponse(BaseModel):
 
 class MatchConfirmRequest(BaseModel):
     is_confirmed: bool
-
-
-class MatchConfirmationRateResponse(BaseModel):
-    confirmed_lost_items: int
-    with_candidates_lost_items: int
-    confirmation_rate: float
