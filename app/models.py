@@ -60,8 +60,8 @@ class Item(Base):
     user: Mapped[User] = relationship("User", back_populates="items")
     lost_item: Mapped[LostItem | None] = relationship("LostItem", back_populates="item", uselist=False, cascade="all, delete-orphan")
     found_item: Mapped[FoundItem | None] = relationship("FoundItem", back_populates="item", uselist=False, cascade="all, delete-orphan")
-    lost_matches: Mapped[list[Match]] = relationship("Match", foreign_keys="Match.lost_item_id", back_populates="lost_item")
-    found_matches: Mapped[list[Match]] = relationship("Match", foreign_keys="Match.found_item_id", back_populates="found_item")
+    lost_matches: Mapped[list[Match]] = relationship("Match", foreign_keys="Match.lost_item_id", back_populates="lost_item", passive_deletes=True)
+    found_matches: Mapped[list[Match]] = relationship("Match", foreign_keys="Match.found_item_id", back_populates="found_item", passive_deletes=True)
 
     def __repr__(self) -> str:
         return f"<Item id={self.id} category={self.category!r} status={self.status}>"
