@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.dependencies import get_current_user
-from app.matching.schema import MatchConfirmRequest, MatchListResponse, MatchResponse
-from app.matching.service import confirm_match, get_matches_by_lost_item, run_matching
+from app.matching.schema import MatchConfirmRequest, MatchConfirmationRateResponse, MatchListResponse, MatchResponse
+from app.matching.service import confirm_match, get_confirmation_rate, get_matches_by_lost_item, run_matching
 from app.models import User
 
 router = APIRouter()
@@ -43,6 +43,20 @@ async def trigger_matching(
         "code": 202,
         "message": f"매칭 완료. {len(matches)}건 저장됨.",
         "data": {"matched_count": len(matches)},
+    }
+
+
+@router.get("/matches/stats/confirmation-rate")
+async def get_match_confirmation_rate(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    stats = await get_confirmation_rate(db)
+    return {
+        "success": True,
+        "code": 200,
+        "message": "매칭 확정률 조회 성공",
+        "data": MatchConfirmationRateResponse(**stats),
     }
 
 
