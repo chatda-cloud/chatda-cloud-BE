@@ -17,7 +17,7 @@ from datetime import datetime
 
 import boto3
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -274,3 +274,24 @@ async def confirm_match(
 
     await db.flush()
     return match
+
+
+# ── 매칭 확정률 통계 ──────────────────────────────────────
+async def get_confirmation_rate(db: AsyncSession) -> dict:
+    total_result = await db.execute(
+        select(func.count(func.distinct(Match.lost_item_id)))
+    )
+    with_candidates: int = total_result.scalar() or 0
+
+    confirmed_result = await db.execute(
+        select(func.count(func.distinct(Match.lost_item_id)))
+        .where(Match.is_confirmed == True)  # noqa: E712
+    )
+    confirmed: int = confirmed_result.scalar() or 0
+
+    rate = confirmed / with_candidates if with_candidates > 0 else 0.0
+    return {
+        "confirmed_lost_items": confirmed,
+        "with_candidates_lost_items": with_candidates,
+        "confirmation_rate": round(rate, 4),
+    }
